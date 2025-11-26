@@ -22,6 +22,9 @@ export const translations = {
     // Assignments
     dueDate: 'תאריך הגשה',
     newBadge: 'חדש!',
+    submitted: 'הוגש',
+    notSubmitted: 'לא הוגש',
+    allAssignments: 'כל המטלות',
 
     // Courses
     myCourses: 'הקורסים שלי',
@@ -75,6 +78,9 @@ export const translations = {
     // Assignments
     dueDate: 'Due Date',
     newBadge: 'New!',
+    submitted: 'Submitted',
+    notSubmitted: 'Not Submitted',
+    allAssignments: 'All Assignments',
 
     // Courses
     myCourses: 'My Courses',

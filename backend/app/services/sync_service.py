@@ -17,11 +17,20 @@ class SyncService:
 
         # 1. Sync courses
         courses = await self.moodle.get_user_courses()
+        print(f"[DEBUG] Fetched {len(courses)} courses")
         await self._sync_courses(courses)
 
         # 2. Sync assignments
         course_ids = [c['id'] for c in courses]
+        print(f"[DEBUG] Course IDs: {course_ids}")
         assignments_data = await self.moodle.get_assignments(course_ids)
+        print(f"[DEBUG] Assignments API response type: {type(assignments_data)}")
+        print(f"[DEBUG] Assignments API response keys: {assignments_data.keys() if isinstance(assignments_data, dict) else 'Not a dict'}")
+        if isinstance(assignments_data, dict) and 'courses' in assignments_data:
+            print(f"[DEBUG] Number of courses with assignments: {len(assignments_data['courses'])}")
+            for course in assignments_data['courses']:
+                if 'assignments' in course:
+                    print(f"[DEBUG] Course {course.get('id')} has {len(course['assignments'])} assignments")
         await self._sync_assignments(assignments_data)
 
         # 3. Sync resources (files)
@@ -71,6 +80,16 @@ class SyncService:
                 if assign_data.get('duedate'):
                     due_date = datetime.fromtimestamp(assign_data['duedate'])
 
+                # Check submission status
+                submitted = False
+                try:
+                    status = await self.moodle.get_assignment_status(assign_data['id'])
+                    # Check if there's a submission with status "submitted"
+                    if status.get('lastattempt', {}).get('submission', {}).get('status') == 'submitted':
+                        submitted = True
+                except Exception:
+                    pass
+
                 if not existing:
                     assignment = Assignment(
                         moodle_id=assign_data['id'],
@@ -78,9 +97,14 @@ class SyncService:
                         name=assign_data.get('name', ''),
                         due_date=due_date,
                         description=assign_data.get('intro', ''),
-                        is_new=True
+                        is_new=True,
+                        submitted=submitted
                     )
                     self.db.add(assignment)
+                else:
+                    # Update existing assignment's submission status
+                    existing.submitted = submitted
+                    existing.updated_at = datetime.utcnow()
 
     async def _sync_resources(self, course_id: int, contents: list):
         """Sync course resources (files) to database"""

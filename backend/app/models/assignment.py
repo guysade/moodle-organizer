@@ -13,5 +13,6 @@ class Assignment(Base):
     due_date = Column(DateTime, nullable=True)
     description = Column(String, nullable=True)
     is_new = Column(Boolean, default=True)
+    submitted = Column(Boolean, default=False)  # Submission status
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

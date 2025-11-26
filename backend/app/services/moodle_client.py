@@ -29,6 +29,18 @@ class MoodleClient:
         """Fetch course contents (modules, resources)"""
         return await self._call("core_course_get_contents", courseid=course_id)
 
-    async def get_assignments(self, course_ids: List[int]) -> List[Dict]:
+    async def get_assignments(self, course_ids: List[int]) -> Dict:
         """Fetch assignments for multiple courses"""
-        return await self._call("mod_assign_get_assignments", courseids=course_ids)
+        # Moodle API expects courseids[0]=id1&courseids[1]=id2 format
+        params = {f"courseids[{i}]": cid for i, cid in enumerate(course_ids)}
+        return await self._call("mod_assign_get_assignments", **params)
+
+    async def get_assignment_status(self, assignment_id: int) -> Dict:
+        """Fetch submission status for an assignment"""
+        try:
+            return await self._call("mod_assign_get_submission_status",
+                                   assignid=assignment_id,
+                                   userid=self.user_id)
+        except Exception:
+            # If we can't get status, return empty dict
+            return {}

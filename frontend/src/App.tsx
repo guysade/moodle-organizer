@@ -174,6 +174,10 @@ function Dashboard() {
     queryKey: ['courses'],
     queryFn: getCourses
   })
+  const { data: assignments, isLoading: assignmentsLoading, isError: assignmentsError } = useQuery({
+    queryKey: ['assignments'],
+    queryFn: getAssignments
+  })
 
   // Track which resources have been marked as completed
   const [completedResources, setCompletedResources] = React.useState<Set<number>>(() => {
@@ -189,6 +193,14 @@ function Dashboard() {
 
   // Show modal to add courses back
   const [showAddCourses, setShowAddCourses] = React.useState(false)
+
+  // Get pending assignments (not submitted and has due date)
+  const pendingAssignments = React.useMemo(() => {
+    if (!assignments) return []
+    return assignments
+      .filter((a: any) => !a.submitted && a.due_date)
+      .slice(0, 5) // Show only first 5
+  }, [assignments])
 
   // Parse course name to get localized version
   const getCourseName = (fullname: string) => {
@@ -277,7 +289,7 @@ function Dashboard() {
     })
   }
 
-  if (resourcesLoading || coursesLoading) {
+  if (resourcesLoading || coursesLoading || assignmentsLoading) {
     return (
       <div className="flex justify-center items-center h-64">
         <div className="spinner" />
@@ -285,7 +297,7 @@ function Dashboard() {
     )
   }
 
-  if (resourcesError || coursesError) {
+  if (resourcesError || coursesError || assignmentsError) {
     return (
       <div className="flex justify-center items-center h-64">
         <div className="text-center">
@@ -351,6 +363,72 @@ function Dashboard() {
 
   return (
     <div className="animate-fade-in">
+      {/* Pending Assignments Widget */}
+      {pendingAssignments.length > 0 && (
+        <div className="mb-8 card p-6 bg-gradient-to-br from-orange-50 to-red-50 border-l-4 border-orange-500">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-orange-500 rounded-lg flex items-center justify-center">
+                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-gray-800">
+                  {language === 'he' ? 'מטלות שמחכות להגשה' : 'Pending Assignments'}
+                </h3>
+                <p className="text-sm text-gray-600">
+                  {pendingAssignments.length} {language === 'he' ? 'מטלות ממתינות' : 'assignments waiting'}
+                </p>
+              </div>
+            </div>
+            <Link
+              to="/assignments"
+              className="px-4 py-2 text-sm font-medium text-orange-600 hover:text-orange-700 hover:bg-orange-100 rounded-lg transition-colors duration-200 flex items-center gap-2"
+            >
+              {language === 'he' ? 'לכל המטלות' : 'All Assignments'}
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </Link>
+          </div>
+          <div className="space-y-3">
+            {pendingAssignments.map((assignment: any) => (
+              <div key={assignment.id} className="bg-white p-4 rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <h4 className="font-semibold text-gray-800 mb-1 leading-tight">
+                      {assignment.name}
+                    </h4>
+                    <div className="flex items-center gap-2 text-sm text-gray-600 mb-1">
+                      <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                      </svg>
+                      <span className="truncate">
+                        {getCourseName(assignment.course_name)}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm text-orange-600">
+                      <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      <span className="font-medium">
+                        {new Date(assignment.due_date).toLocaleDateString(language === 'he' ? 'he-IL' : 'en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="mb-8 flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold text-gray-800 mb-2">{t.whatsNew}</h2>
@@ -545,12 +623,6 @@ function Assignments() {
     queryKey: ['assignments'],
     queryFn: getAssignments
   })
-  const { data: courses, isLoading: coursesLoading, isError: coursesError } = useQuery({
-    queryKey: ['courses'],
-    queryFn: getCourses
-  })
-
-  const [expandedCourses, setExpandedCourses] = React.useState<Set<number>>(new Set())
 
   // Parse course name to get localized version
   const getCourseName = (fullname: string) => {
@@ -569,46 +641,7 @@ function Assignments() {
     return fullname.replace(/^\d+\s*-\s*/, '').trim()
   }
 
-  // Group assignments by course - MUST be before conditional returns
-  const assignmentsByCourse = React.useMemo(() => {
-    if (!assignments || !courses) return []
-
-    const grouped = new Map<number, any[]>()
-
-    assignments.forEach((assignment: any) => {
-      if (!grouped.has(assignment.course_id)) {
-        grouped.set(assignment.course_id, [])
-      }
-      grouped.get(assignment.course_id)!.push(assignment)
-    })
-
-    // Sort by due date within each course
-    grouped.forEach((assignmentList) => {
-      assignmentList.sort((a, b) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime())
-    })
-
-    return Array.from(grouped.entries()).map(([courseId, courseAssignments]) => {
-      const course = courses.find((c: any) => c.id === courseId)
-      return {
-        course,
-        assignments: courseAssignments
-      }
-    }).filter(item => item.course) // Only include courses that exist
-  }, [assignments, courses])
-
-  const toggleCourse = (courseId: number) => {
-    setExpandedCourses(prev => {
-      const next = new Set(prev)
-      if (next.has(courseId)) {
-        next.delete(courseId)
-      } else {
-        next.add(courseId)
-      }
-      return next
-    })
-  }
-
-  if (assignmentsLoading || coursesLoading) {
+  if (assignmentsLoading) {
     return (
       <div className="flex justify-center items-center h-64">
         <div className="spinner" />
@@ -616,7 +649,7 @@ function Assignments() {
     )
   }
 
-  if (assignmentsError || coursesError) {
+  if (assignmentsError) {
     return (
       <div className="flex justify-center items-center h-64">
         <div className="text-center">
@@ -627,26 +660,14 @@ function Assignments() {
     )
   }
 
-  // Color palette for course headers
-  const colors = [
-    'from-blue-500 to-blue-600',
-    'from-purple-500 to-purple-600',
-    'from-green-500 to-green-600',
-    'from-orange-500 to-orange-600',
-    'from-pink-500 to-pink-600',
-    'from-indigo-500 to-indigo-600',
-    'from-teal-500 to-teal-600',
-    'from-red-500 to-red-600',
-  ]
-
   return (
     <div className="animate-fade-in">
       <div className="mb-8">
-        <h2 className="text-3xl font-bold text-gray-800 mb-2">{t.assignments}</h2>
+        <h2 className="text-3xl font-bold text-gray-800 mb-2">{t.allAssignments}</h2>
         <p className="text-gray-600">
-          {assignmentsByCourse.length > 0
-            ? `${assignmentsByCourse.reduce((sum, item) => sum + item.assignments.length, 0)} ${t.assignments.toLowerCase()} ${language === 'he' ? 'ב-' : 'across'} ${assignmentsByCourse.length} ${language === 'he' ? 'קורסים' : 'courses'}`
-            : 'Upcoming deadlines and tasks'}
+          {assignments && assignments.length > 0
+            ? `${assignments.length} ${language === 'he' ? 'מטלות' : 'assignments'}`
+            : language === 'he' ? 'מטלות ותאריכי הגשה קרובים' : 'Upcoming deadlines and tasks'}
         </p>
       </div>
 
@@ -663,110 +684,64 @@ function Assignments() {
           </div>
         </div>
       ) : (
-        <div className="space-y-6">
-          {assignmentsByCourse.map((item, index) => {
-            const isExpanded = expandedCourses.has(item.course.id)
-            const colorClass = colors[index % colors.length]
-            const hasNewAssignments = item.assignments.some((a: any) => a.is_new)
+        <div className="space-y-3">
+          {assignments.map((assignment: any) => (
+            <div
+              key={assignment.id}
+              className="card p-5 hover:shadow-lg transition-shadow duration-200"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1 min-w-0">
+                  {/* Assignment Name */}
+                  <h3 className="font-bold text-gray-800 text-lg mb-2 leading-tight">
+                    {assignment.name}
+                  </h3>
 
-            return (
-              <div key={item.course.id} className="card overflow-hidden">
-                {/* Course Header */}
-                <button
-                  onClick={() => toggleCourse(item.course.id)}
-                  className="w-full px-6 py-5 flex items-center justify-between bg-gradient-to-r hover:opacity-90 transition-opacity duration-200"
-                  style={{
-                    background: `linear-gradient(to right, var(--tw-gradient-stops))`,
-                  }}
-                >
-                  <div className={`absolute inset-0 bg-gradient-to-r ${colorClass} opacity-100`}></div>
-                  <div className="relative flex items-center gap-4 flex-1">
-                    <div className="w-12 h-12 bg-white bg-opacity-20 rounded-xl flex items-center justify-center backdrop-blur-sm">
-                      <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                      </svg>
-                    </div>
-                    <div className="flex-1 text-start">
-                      <h3 className="font-bold text-white text-lg leading-tight mb-1">
-                        {getCourseName(item.course.fullname)}
-                      </h3>
-                      <p className="text-white text-opacity-90 text-sm">
-                        {item.course.shortname}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      {hasNewAssignments && (
-                        <span className="px-3 py-1 bg-white bg-opacity-20 backdrop-blur-sm rounded-full text-white text-xs font-semibold">
-                          {t.newBadge}
-                        </span>
-                      )}
-                      <span className="px-3 py-1 bg-white bg-opacity-20 backdrop-blur-sm rounded-full text-white font-semibold">
-                        {item.assignments.length}
-                      </span>
-                      <svg
-                        className={`w-5 h-5 text-white transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`}
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                      </svg>
-                    </div>
+                  {/* Course Name */}
+                  <div className="flex items-center gap-2 text-sm text-gray-600 mb-2">
+                    <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                    </svg>
+                    <span className="truncate">
+                      {getCourseName(assignment.course_name)}
+                    </span>
                   </div>
-                </button>
 
-                {/* Assignments List */}
-                <div
-                  className={`transition-all duration-300 ease-in-out ${
-                    isExpanded ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0 overflow-hidden'
-                  }`}
-                >
-                  <div className="p-6 space-y-3 bg-gray-50">
-                    {item.assignments.map((assignment: any, idx: number) => (
-                      <div
-                        key={assignment.id}
-                        className="bg-white p-4 rounded-lg shadow-sm border border-gray-100 hover:shadow-md transition-shadow duration-200"
-                      >
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="flex-1">
-                            <div className="flex items-start gap-3">
-                              <div className="mt-1">
-                                <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-                                </svg>
-                              </div>
-                              <div className="flex-1">
-                                <h4 className="font-semibold text-gray-800 mb-2 leading-tight">
-                                  {assignment.name}
-                                </h4>
-                                <div className="flex items-center gap-2 text-sm text-gray-600">
-                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                  </svg>
-                                  <span>
-                                    {t.dueDate}: {new Date(assignment.due_date).toLocaleDateString(language === 'he' ? 'he-IL' : 'en-US', {
-                                      year: 'numeric',
-                                      month: 'long',
-                                      day: 'numeric',
-                                      hour: '2-digit',
-                                      minute: '2-digit'
-                                    })}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                          {assignment.is_new && (
-                            <span className="badge badge-new">{t.newBadge}</span>
-                          )}
-                        </div>
-                      </div>
-                    ))}
+                  {/* Due Date */}
+                  <div className="flex items-center gap-2 text-sm text-gray-600">
+                    <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    <span>
+                      {t.dueDate}: {new Date(assignment.due_date).toLocaleDateString(language === 'he' ? 'he-IL' : 'en-US', {
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}
+                    </span>
                   </div>
                 </div>
+
+                {/* Status Badge */}
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {assignment.is_new && (
+                    <span className="badge badge-new">{t.newBadge}</span>
+                  )}
+                  {assignment.submitted ? (
+                    <span className="px-3 py-1.5 bg-green-100 text-green-700 rounded-lg text-sm font-semibold whitespace-nowrap">
+                      ✓ {t.submitted}
+                    </span>
+                  ) : (
+                    <span className="px-3 py-1.5 bg-red-100 text-red-700 rounded-lg text-sm font-semibold whitespace-nowrap">
+                      {t.notSubmitted}
+                    </span>
+                  )}
+                </div>
               </div>
-            )
-          })}
+            </div>
+          ))}
         </div>
       )}
     </div>
