@@ -178,6 +178,22 @@ function Dashboard() {
     queryKey: ['assignments'],
     queryFn: getAssignments
   })
+  const { data: schedule, isLoading: scheduleLoading, isError: scheduleError } = useQuery({
+    queryKey: ['schedule'],
+    queryFn: getSchedule
+  })
+
+  // Track current time for live updates
+  const [currentTime, setCurrentTime] = React.useState(new Date())
+
+  // Update time every minute
+  React.useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date())
+    }, 60000) // Update every minute
+
+    return () => clearInterval(timer)
+  }, [])
 
   // Track which resources have been marked as completed
   const [completedResources, setCompletedResources] = React.useState<Set<number>>(() => {
@@ -201,6 +217,32 @@ function Dashboard() {
       .filter((a: any) => !a.submitted && a.due_date)
       .slice(0, 5) // Show only first 5
   }, [assignments])
+
+  // Find current course from schedule
+  const currentCourse = React.useMemo(() => {
+    if (!schedule) return null
+
+    const now = currentTime
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+    const currentDay = dayNames[now.getDay()]
+    const currentHour = now.getHours()
+    const currentMinute = now.getMinutes()
+    const currentTimeInMinutes = currentHour * 60 + currentMinute
+
+    // Find course that matches current day and time
+    const course = schedule.find((item: any) => {
+      if (item.day !== currentDay) return false
+
+      const [startHour, startMinute] = item.start.split(':').map(Number)
+      const [endHour, endMinute] = item.end.split(':').map(Number)
+      const startTimeInMinutes = startHour * 60 + startMinute
+      const endTimeInMinutes = endHour * 60 + endMinute
+
+      return currentTimeInMinutes >= startTimeInMinutes && currentTimeInMinutes < endTimeInMinutes
+    })
+
+    return course || null
+  }, [schedule, currentTime])
 
   // Parse course name to get localized version
   const getCourseName = (fullname: string) => {
@@ -289,7 +331,7 @@ function Dashboard() {
     })
   }
 
-  if (resourcesLoading || coursesLoading || assignmentsLoading) {
+  if (resourcesLoading || coursesLoading || assignmentsLoading || scheduleLoading) {
     return (
       <div className="flex justify-center items-center h-64">
         <div className="spinner" />
@@ -297,7 +339,7 @@ function Dashboard() {
     )
   }
 
-  if (resourcesError || coursesError || assignmentsError) {
+  if (resourcesError || coursesError || assignmentsError || scheduleError) {
     return (
       <div className="flex justify-center items-center h-64">
         <div className="text-center">
@@ -363,205 +405,260 @@ function Dashboard() {
 
   return (
     <div className="animate-fade-in">
-      {/* Pending Assignments Widget */}
-      {pendingAssignments.length > 0 && (
-        <div className="mb-8 card p-6 bg-gradient-to-br from-orange-50 to-red-50 border-l-4 border-orange-500">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-orange-500 rounded-lg flex items-center justify-center">
-                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      {/* Current Course Widget */}
+      {currentCourse && (
+        <div className="mb-4 card p-4 bg-gradient-to-br from-green-50 to-emerald-50 border-l-4 border-green-500">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-green-500 rounded-lg flex items-center justify-center">
+                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
               <div>
-                <h3 className="text-xl font-bold text-gray-800">
-                  {language === 'he' ? 'מטלות שמחכות להגשה' : 'Pending Assignments'}
+                <h3 className="text-lg font-bold text-gray-800">
+                  {language === 'he' ? 'כעת בלמידה' : 'Currently in Class'}
                 </h3>
-                <p className="text-sm text-gray-600">
-                  {pendingAssignments.length} {language === 'he' ? 'מטלות ממתינות' : 'assignments waiting'}
+                <p className="text-xs text-gray-600">
+                  {currentCourse.start} - {currentCourse.end}
                 </p>
               </div>
             </div>
-            <Link
-              to="/assignments"
-              className="px-4 py-2 text-sm font-medium text-orange-600 hover:text-orange-700 hover:bg-orange-100 rounded-lg transition-colors duration-200 flex items-center gap-2"
-            >
-              {language === 'he' ? 'לכל המטלות' : 'All Assignments'}
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </Link>
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+              <span className="text-xs font-medium text-green-600">
+                {language === 'he' ? 'פעיל כעת' : 'Live Now'}
+              </span>
+            </div>
           </div>
-          <div className="space-y-3">
-            {pendingAssignments.map((assignment: any) => (
-              <div key={assignment.id} className="bg-white p-4 rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <h4 className="font-semibold text-gray-800 mb-1 leading-tight">
-                      {assignment.name}
-                    </h4>
-                    <div className="flex items-center gap-2 text-sm text-gray-600 mb-1">
-                      <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                      </svg>
-                      <span className="truncate">
-                        {getCourseName(assignment.course_name)}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2 text-sm text-orange-600">
-                      <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                      <span className="font-medium">
-                        {new Date(assignment.due_date).toLocaleDateString(language === 'he' ? 'he-IL' : 'en-US', {
-                          month: 'short',
-                          day: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })}
-                      </span>
-                    </div>
-                  </div>
+          <div className="bg-white p-3 rounded-lg shadow-sm">
+            <h4 className="text-xl font-bold text-gray-800 mb-2">
+              {currentCourse.title}
+            </h4>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex items-center gap-2 text-gray-600">
+                <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <div>
+                  <p className="text-xs text-gray-500">{language === 'he' ? 'סוג' : 'Type'}</p>
+                  <p className="text-sm font-semibold">{currentCourse.type}</p>
                 </div>
               </div>
-            ))}
+              <div className="flex items-center gap-2 text-gray-600">
+                <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                <div>
+                  <p className="text-xs text-gray-500">{language === 'he' ? 'מיקום' : 'Location'}</p>
+                  <p className="text-sm font-semibold">{currentCourse.location}</p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
 
-      <div className="mb-8 flex items-center justify-between">
-        <div>
-          <h2 className="text-3xl font-bold text-gray-800 mb-2">{t.whatsNew}</h2>
-          <p className="text-gray-600">
-            {resourcesByCourse.length > 0
-              ? `${resourcesByCourse.reduce((sum, item) => sum + item.resources.length, 0)} ${language === 'he' ? 'קבצים חדשים ב-' : 'new files across'} ${resourcesByCourse.length} ${language === 'he' ? 'קורסים' : 'courses'}`
-              : t.recentlyAdded}
-          </p>
-        </div>
-        {hiddenCourses.size > 0 && (
-          <button
-            onClick={() => setShowAddCourses(!showAddCourses)}
-            className="px-4 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors duration-200 flex items-center gap-2"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            {language === 'he' ? `הצג ${hiddenCourses.size} קורסים מוסתרים` : `Show ${hiddenCourses.size} hidden courses`}
-          </button>
-        )}
-      </div>
-
-      {/* Hidden courses modal */}
-      {showAddCourses && (
-        <div className="mb-6 card p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-bold text-gray-800">
-              {language === 'he' ? 'קורסים מוסתרים' : 'Hidden Courses'}
-            </h3>
-            <button
-              onClick={() => setShowAddCourses(false)}
-              className="text-gray-400 hover:text-gray-600"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-          <div className="space-y-2">
-            {coursesWithResources
-              .filter((c: any) => hiddenCourses.has(c.id))
-              .map((course: any) => (
-                <div key={course.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <span className="font-medium text-gray-800">{getCourseName(course.fullname)}</span>
-                  <button
-                    onClick={() => unhideCourse(course.id)}
-                    className="px-3 py-1 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200"
-                  >
-                    {language === 'he' ? 'הצג' : 'Show'}
-                  </button>
+      {/* Grid Layout for Assignments and Materials */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full">
+        {/* Pending Assignments Widget */}
+        {pendingAssignments.length > 0 && (
+          <div className="card p-5 bg-gradient-to-br from-orange-50 to-red-50 border-l-4 border-orange-500 flex flex-col" style={{height: currentCourse ? 'calc(100vh - 13rem)' : 'calc(100vh - 8rem)'}}>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 bg-orange-500 rounded-lg flex items-center justify-center">
+                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-800">
+                    {language === 'he' ? 'מטלות שמחכות להגשה' : 'Pending Assignments'}
+                  </h3>
+                  <p className="text-xs text-gray-600">
+                    {pendingAssignments.length} {language === 'he' ? 'ממתינות' : 'pending'}
+                  </p>
+                </div>
+              </div>
+              <Link
+                to="/assignments"
+                className="px-3 py-1.5 text-xs font-medium text-orange-600 hover:text-orange-700 hover:bg-orange-100 rounded-lg transition-colors duration-200 flex items-center gap-1"
+              >
+                {language === 'he' ? 'לכל המטלות' : 'View All'}
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </Link>
+            </div>
+            <div className="overflow-y-auto space-y-2 flex-1">
+              {pendingAssignments.map((assignment: any) => (
+                <div key={assignment.id} className="bg-white p-3 rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200">
+                  <h4 className="font-semibold text-gray-800 text-sm mb-1 leading-tight">
+                    {assignment.name}
+                  </h4>
+                  <div className="flex items-center gap-2 text-xs text-gray-600 mb-1">
+                    <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                    </svg>
+                    <span className="truncate">
+                      {getCourseName(assignment.course_name)}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-orange-600 font-medium">
+                    <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    {new Date(assignment.due_date).toLocaleDateString(language === 'he' ? 'he-IL' : 'en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })}
+                  </div>
                 </div>
               ))}
-          </div>
-        </div>
-      )}
-
-      {resourcesByCourse.length === 0 ? (
-        <div className="card p-8">
-          <div className="empty-state">
-            <div className="empty-state-icon">
-              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
             </div>
-            <h3 className="text-lg font-semibold text-gray-800 mb-2">
-              {language === 'he' ? 'כל הקבצים נצפו!' : 'All caught up!'}
-            </h3>
-            <p className="text-gray-500">
-              {language === 'he' ? 'אין קבצים חדשים ללימוד' : 'No new materials to learn'}
-            </p>
           </div>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        )}
+
+        {/* New Materials Widget */}
+        <div className={`card p-5 flex flex-col ${pendingAssignments.length === 0 ? 'lg:col-span-2' : ''}`} style={{height: currentCourse ? 'calc(100vh - 13rem)' : 'calc(100vh - 8rem)'}}>
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h3 className="text-lg font-bold text-gray-800">{t.whatsNew}</h3>
+              <p className="text-xs text-gray-600">
+                {resourcesByCourse.length > 0
+                  ? `${resourcesByCourse.reduce((sum, item) => sum + item.resources.length, 0)} ${language === 'he' ? 'קבצים חדשים' : 'new files'}`
+                  : t.recentlyAdded}
+              </p>
+            </div>
+            {hiddenCourses.size > 0 && (
+              <button
+                onClick={() => setShowAddCourses(!showAddCourses)}
+                className="px-3 py-1.5 text-xs bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors duration-200 flex items-center gap-1"
+              >
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                {language === 'he' ? `${hiddenCourses.size} מוסתרים` : `${hiddenCourses.size} hidden`}
+              </button>
+            )}
+          </div>
+
+          {/* Hidden courses modal */}
+          {showAddCourses && (
+            <div className="mb-3 p-4 bg-gray-50 rounded-lg">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-sm font-bold text-gray-800">
+                  {language === 'he' ? 'קורסים מוסתרים' : 'Hidden Courses'}
+                </h4>
+                <button
+                  onClick={() => setShowAddCourses(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="space-y-2">
+                {coursesWithResources
+                  .filter((c: any) => hiddenCourses.has(c.id))
+                  .map((course: any) => (
+                    <div key={course.id} className="flex items-center justify-between p-2 bg-white rounded-lg">
+                      <span className="text-sm font-medium text-gray-800">{getCourseName(course.fullname)}</span>
+                      <button
+                        onClick={() => unhideCourse(course.id)}
+                        className="px-2 py-1 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200"
+                      >
+                        {language === 'he' ? 'הצג' : 'Show'}
+                      </button>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+
+          {resourcesByCourse.length === 0 ? (
+            <div className="flex-1 flex items-center justify-center">
+              <div className="text-center">
+                <div className="w-16 h-16 mx-auto mb-3 bg-gray-100 rounded-full flex items-center justify-center">
+                  <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <h4 className="text-sm font-semibold text-gray-800 mb-1">
+                  {language === 'he' ? 'כל הקבצים נצפו!' : 'All caught up!'}
+                </h4>
+                <p className="text-xs text-gray-500">
+                  {language === 'he' ? 'אין קבצים חדשים' : 'No new materials'}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="overflow-y-auto flex-1 space-y-3">
           {resourcesByCourse.map((item, index) => {
             const colorClass = colors[index % colors.length]
 
             return (
-              <div key={item.course.id} className="card overflow-hidden flex flex-col">
+              <div key={item.course.id} className="bg-gray-50 rounded-lg overflow-hidden">
                 {/* Course Header */}
-                <div className={`px-6 py-4 bg-gradient-to-r ${colorClass} relative`}>
-                  <button
-                    onClick={() => hideCourse(item.course.id)}
-                    className="absolute top-2 end-2 p-1 hover:bg-white hover:bg-opacity-20 rounded transition-colors duration-200"
-                    title={language === 'he' ? 'הסתר קורס' : 'Hide course'}
-                  >
-                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-white bg-opacity-20 rounded-lg flex items-center justify-center backdrop-blur-sm">
-                      <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className={`px-4 py-2.5 bg-gradient-to-r ${colorClass} relative flex items-center justify-between`}>
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <div className="w-7 h-7 bg-white bg-opacity-20 rounded-lg flex items-center justify-center backdrop-blur-sm flex-shrink-0">
+                      <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
                       </svg>
                     </div>
                     <div className="flex-1 min-w-0">
-                      <h3 className="font-bold text-white text-base leading-tight mb-1 truncate pe-8">
+                      <h3 className="font-bold text-white text-sm leading-tight truncate">
                         {getCourseName(item.course.fullname)}
                       </h3>
-                      <p className="text-white text-opacity-90 text-sm truncate">
-                        {item.resources.length} {language === 'he' ? 'חומרים חדשים' : 'new materials'}
+                      <p className="text-white text-opacity-90 text-xs truncate">
+                        {item.resources.length} {language === 'he' ? 'חומרים' : 'items'}
                       </p>
                     </div>
                   </div>
+                  <button
+                    onClick={() => hideCourse(item.course.id)}
+                    className="p-1 hover:bg-white hover:bg-opacity-20 rounded transition-colors duration-200 flex-shrink-0"
+                    title={language === 'he' ? 'הסתר' : 'Hide'}
+                  >
+                    <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
                 </div>
 
                 {/* Materials List */}
-                <div className="p-4 space-y-2 flex-1 bg-gray-50">
+                <div className="p-3 space-y-1.5">
                   {item.resources.map((resource: any) => (
                     <div
                       key={resource.id}
-                      className="bg-white p-3 rounded-lg border border-gray-200 hover:border-gray-300 transition-all duration-200 flex items-start gap-3"
+                      className="bg-white p-2 rounded-lg border border-gray-200 hover:border-gray-300 transition-all duration-200 flex items-center gap-2"
                     >
                       {/* Checkbox */}
                       <input
                         type="checkbox"
                         checked={completedResources.has(resource.id)}
                         onChange={() => toggleResourceComplete(resource.id)}
-                        className="mt-1 w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 focus:ring-2 cursor-pointer flex-shrink-0"
+                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 focus:ring-2 cursor-pointer flex-shrink-0"
                       />
 
                       {/* File Icon */}
-                      <div className="w-10 h-10 bg-gray-50 rounded-lg flex items-center justify-center flex-shrink-0">
-                        {getFileIcon(resource.mimetype)}
+                      <div className="w-8 h-8 bg-gray-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <div className="scale-75">
+                          {getFileIcon(resource.mimetype)}
+                        </div>
                       </div>
 
                       {/* File Info */}
                       <div className="flex-1 min-w-0">
-                        <h4 className="font-semibold text-gray-800 text-sm mb-1 truncate">
+                        <h4 className="font-semibold text-gray-800 text-xs mb-0.5 truncate">
                           {resource.filename}
                         </h4>
-                        <div className="flex items-center gap-2 text-xs text-gray-500">
+                        <div className="flex items-center gap-1.5 text-xs text-gray-500">
                           {resource.filesize && (
                             <span>{formatFileSize(resource.filesize)}</span>
                           )}
@@ -580,16 +677,16 @@ function Dashboard() {
                       </div>
 
                       {/* Action Buttons */}
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-0.5">
                         {/* Open Button */}
                         <a
                           href={resource.download_url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="flex-shrink-0 p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors duration-200"
+                          className="flex-shrink-0 p-1.5 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors duration-200"
                           title={language === 'he' ? 'פתח' : 'Open'}
                         >
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                           </svg>
                         </a>
@@ -597,10 +694,10 @@ function Dashboard() {
                         <a
                           href={resource.download_url}
                           download={resource.filename}
-                          className="flex-shrink-0 p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors duration-200"
+                          className="flex-shrink-0 p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors duration-200"
                           title={t.download}
                         >
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                           </svg>
                         </a>
@@ -611,8 +708,10 @@ function Dashboard() {
               </div>
             )
           })}
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   )
 }
