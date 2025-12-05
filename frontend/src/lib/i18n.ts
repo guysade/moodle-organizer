@@ -54,7 +54,10 @@ export const translations = {
     file: 'קובץ',
     files: 'קבצים',
     location: 'מיקום',
-    type: 'סוג'
+    type: 'סוג',
+    grades: 'ציונים',
+    myGrades: 'הציונים שלי',
+    grade: 'ציון'
   },
 
   en: {
@@ -110,7 +113,10 @@ export const translations = {
     file: 'File',
     files: 'Files',
     location: 'Location',
-    type: 'Type'
+    type: 'Type',
+    grades: 'Grades',
+    myGrades: 'My Grades',
+    grade: 'Grade'
   }
 }
 

@@ -44,3 +44,8 @@ class MoodleClient:
         except Exception:
             # If we can't get status, return empty dict
             return {}
+
+    async def get_submissions(self, assignment_ids: List[int]) -> Dict:
+        """Fetch submissions for multiple assignments"""
+        params = {f"assignmentids[{i}]": aid for i, aid in enumerate(assignment_ids)}
+        return await self._call("mod_assign_get_submissions", **params)

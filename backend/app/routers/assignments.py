@@ -13,7 +13,7 @@ async def get_assignments(db: AsyncSession = Depends(get_db)):
     result = await db.execute(
         select(Assignment)
         .where(Assignment.due_date != None)
-        .order_by(Assignment.due_date.asc())
+        .order_by(Assignment.submitted.asc(), Assignment.due_date.asc())
     )
     assignments = result.scalars().all()
 
@@ -27,11 +27,13 @@ async def get_assignments(db: AsyncSession = Depends(get_db)):
     return [
         {
             "id": a.moodle_id,
+            "cmid": a.cmid,  # Include course module ID for URL
             "course_id": a.course_id,
             "course_name": courses.get(a.course_id).fullname if a.course_id in courses else "",
             "name": a.name,
             "due_date": a.due_date.isoformat() if a.due_date else None,
             "submitted": a.submitted,
+            "grade": a.grade,
             "is_new": a.is_new
         }
         for a in assignments

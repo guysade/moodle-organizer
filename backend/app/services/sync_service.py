@@ -1,3 +1,4 @@
+import asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.services.moodle_client import MoodleClient
@@ -67,44 +68,88 @@ class SyncService:
         if 'courses' not in assignments_data:
             return
 
+        # Flatten assignments list to process concurrently
+        all_assignments = []
         for course in assignments_data['courses']:
-            if 'assignments' not in course:
-                continue
+            if 'assignments' in course:
+                for assign in course['assignments']:
+                    # Add course_id to assignment object for easy access
+                    assign['course_id'] = course['id']
+                    all_assignments.append(assign)
 
-            for assign_data in course['assignments']:
-                stmt = select(Assignment).where(Assignment.moodle_id == assign_data['id'])
-                result = await self.db.execute(stmt)
-                existing = result.scalar_one_or_none()
+        # Batch fetch submission statuses concurrently
+        # We use get_assignment_status which works for students (unlike get_submissions)
+        # running them in parallel is much faster than sequential
+        tasks = [self.moodle.get_assignment_status(a['id']) for a in all_assignments]
+        if tasks:
+            print(f"[DEBUG] Fetching statuses for {len(tasks)} assignments...")
+            # Limit concurrency to avoid overwhelming the server or hitting limits
+            # Since MoodleClient creates a new session per call, we should be careful.
+            # However, asyncio.gather with ~50 tasks is usually fine.
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+        else:
+            results = []
 
-                due_date = None
-                if assign_data.get('duedate'):
-                    due_date = datetime.fromtimestamp(assign_data['duedate'])
+        submission_status_map = {}
+        grade_map = {}
+        for assign, result in zip(all_assignments, results):
+            is_submitted = False
+            grade = None
+            
+            if isinstance(result, Exception):
+                print(f"[ERROR] Failed to fetch status for assignment {assign['id']}: {result}")
+            elif isinstance(result, dict):
+                 # Check if there's a submission with status "submitted" (individual or team)
+                 last_attempt = result.get('lastattempt', {})
+                 sub_status = last_attempt.get('submission', {}).get('status')
+                 team_status = last_attempt.get('teamsubmission', {}).get('status')
+                 
+                 if sub_status == 'submitted' or team_status == 'submitted':
+                     is_submitted = True
+                 
+                 # Extract grade
+                 feedback = result.get('feedback', {})
+                 grade_display = feedback.get('gradefordisplay')
+                 if grade_display:
+                     # Clean up HTML entities
+                     grade = grade_display.replace('&nbsp;', ' ').strip()
+            
+            submission_status_map[assign['id']] = is_submitted
+            grade_map[assign['id']] = grade
 
-                # Check submission status
-                submitted = False
-                try:
-                    status = await self.moodle.get_assignment_status(assign_data['id'])
-                    # Check if there's a submission with status "submitted"
-                    if status.get('lastattempt', {}).get('submission', {}).get('status') == 'submitted':
-                        submitted = True
-                except Exception:
-                    pass
+        # Update DB
+        for assign_data in all_assignments:
+            stmt = select(Assignment).where(Assignment.moodle_id == assign_data['id'])
+            result = await self.db.execute(stmt)
+            existing = result.scalar_one_or_none()
 
-                if not existing:
-                    assignment = Assignment(
-                        moodle_id=assign_data['id'],
-                        course_id=course['id'],
-                        name=assign_data.get('name', ''),
-                        due_date=due_date,
-                        description=assign_data.get('intro', ''),
-                        is_new=True,
-                        submitted=submitted
-                    )
-                    self.db.add(assignment)
-                else:
-                    # Update existing assignment's submission status
-                    existing.submitted = submitted
-                    existing.updated_at = datetime.utcnow()
+            due_date = None
+            if assign_data.get('duedate'):
+                due_date = datetime.fromtimestamp(assign_data['duedate'])
+
+            # Get submission status and grade from maps
+            submitted = submission_status_map.get(assign_data['id'], False)
+            grade = grade_map.get(assign_data['id'])
+
+            if not existing:
+                assignment = Assignment(
+                    moodle_id=assign_data['id'],
+                    cmid=assign_data.get('cmid'),  # Store course module ID
+                    course_id=assign_data['course_id'],
+                    name=assign_data.get('name', ''),
+                    due_date=due_date,
+                    description=assign_data.get('intro', ''),
+                    is_new=True,
+                    submitted=submitted,
+                    grade=grade
+                )
+                self.db.add(assignment)
+            else:
+                # Update existing assignment's submission status, grade and cmid
+                existing.submitted = submitted
+                existing.grade = grade
+                existing.cmid = assign_data.get('cmid')  # Update cmid if changed
+                existing.updated_at = datetime.utcnow()
 
     async def _sync_resources(self, course_id: int, contents: list):
         """Sync course resources (files) to database"""

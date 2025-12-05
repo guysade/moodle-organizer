@@ -2,7 +2,7 @@ import React from 'react'
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom'
 import { useLanguage } from './lib/LanguageContext'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { getCourses, getAssignments, getNewResources, getSchedule, triggerSync } from './lib/api'
+import { getCourses, getAssignments, getNewResources, getResources, getSchedule, triggerSync } from './lib/api'
 
 function App() {
   return (
@@ -53,7 +53,7 @@ function AppContent() {
       setTimeout(() => {
         queryClient.invalidateQueries({ queryKey: ['courses'] })
         queryClient.invalidateQueries({ queryKey: ['assignments'] })
-        queryClient.invalidateQueries({ queryKey: ['newResources'] })
+        queryClient.invalidateQueries({ queryKey: ['resources'] })
       }, 2000)
     }
   })
@@ -167,8 +167,8 @@ function AppContent() {
 function Dashboard() {
   const { t, language } = useLanguage()
   const { data: resources, isLoading: resourcesLoading, isError: resourcesError } = useQuery({
-    queryKey: ['newResources'],
-    queryFn: getNewResources
+    queryKey: ['resources'],
+    queryFn: getResources
   })
   const { data: courses, isLoading: coursesLoading, isError: coursesError } = useQuery({
     queryKey: ['courses'],
@@ -210,12 +210,45 @@ function Dashboard() {
   // Show modal to add courses back
   const [showAddCourses, setShowAddCourses] = React.useState(false)
 
+  // Undo functionality for marking resources as complete
+  const [undoResource, setUndoResource] = React.useState<{id: number, name: string} | null>(null)
+  const undoTimeoutRef = React.useRef<NodeJS.Timeout | null>(null)
+
+  // Track which assignments are hidden from dashboard
+  const [hiddenAssignments, setHiddenAssignments] = React.useState<Set<number>>(() => {
+    const saved = localStorage.getItem('hiddenAssignments')
+    return saved ? new Set(JSON.parse(saved)) : new Set()
+  })
+
+  // Undo functionality for hiding assignments
+  const [undoHiddenAssignment, setUndoHiddenAssignment] = React.useState<{id: number, name: string} | null>(null)
+  const undoAssignmentTimeoutRef = React.useRef<NodeJS.Timeout | null>(null)
+
   // Get pending assignments (not submitted and has due date)
   const pendingAssignments = React.useMemo(() => {
     if (!assignments) return []
     return assignments
-      .filter((a: any) => !a.submitted && a.due_date)
-      .slice(0, 5) // Show only first 5
+      .filter((a: any) => !a.submitted && a.due_date && !hiddenAssignments.has(a.id))
+  }, [assignments, hiddenAssignments])
+
+  // Track visibility of grades section
+  const [showGrades, setShowGrades] = React.useState(() => {
+    const saved = localStorage.getItem('showGrades')
+    return saved ? JSON.parse(saved) : true
+  })
+
+  const toggleGrades = () => {
+    setShowGrades(prev => {
+      const next = !prev
+      localStorage.setItem('showGrades', JSON.stringify(next))
+      return next
+    })
+  }
+
+  // Get graded assignments
+  const gradedAssignments = React.useMemo(() => {
+    if (!assignments) return []
+    return assignments.filter((a: any) => a.grade)
   }, [assignments])
 
   // Find current course from schedule
@@ -267,6 +300,7 @@ function Dashboard() {
 
     const grouped = new Map<number, any[]>()
 
+    // First, add all resources to their respective courses
     resources.forEach((resource: any) => {
       // Skip completed resources
       if (completedResources.has(resource.id)) return
@@ -281,36 +315,123 @@ function Dashboard() {
 
     // Sort by time_created within each course (newest first)
     grouped.forEach((resourceList) => {
-      resourceList.sort((a, b) => new Date(b.time_created).getTime() - new Date(a.time_created).getTime())
+      resourceList.sort((a, b) => {
+        const timeA = a.time_created ? new Date(a.time_created).getTime() : 0
+        const timeB = b.time_created ? new Date(b.time_created).getTime() : 0
+        return timeB - timeA
+      })
     })
 
-    return Array.from(grouped.entries()).map(([courseId, courseResources]) => {
-      const course = courses.find((c: any) => c.id === courseId)
-      return {
+    // Include ALL courses, even those without resources
+    return courses
+      .filter((course: any) => !hiddenCourses.has(course.id))
+      .map((course: any) => ({
         course,
-        resources: courseResources
-      }
-    }).filter(item => item.course && item.resources.length > 0) // Only include courses with uncompleted resources
+        resources: grouped.get(course.id) || []
+      }))
   }, [resources, courses, completedResources, hiddenCourses])
 
-  // Get list of hideable courses (courses with resources)
-  const coursesWithResources = React.useMemo(() => {
-    if (!resources || !courses) return []
-    const courseIds = new Set(resources.map((r: any) => r.course_id))
-    return courses.filter((c: any) => courseIds.has(c.id))
-  }, [resources, courses])
+  // Get list of all courses for hiding/showing
+  const allCourses = React.useMemo(() => {
+    if (!courses) return []
+    return courses
+  }, [courses])
 
-  const toggleResourceComplete = (resourceId: number) => {
+  const toggleResourceComplete = (resourceId: number, resourceName?: string) => {
     setCompletedResources(prev => {
       const next = new Set(prev)
-      if (next.has(resourceId)) {
-        next.delete(resourceId)
-      } else {
+      const isCompleting = !next.has(resourceId)
+
+      if (isCompleting) {
         next.add(resourceId)
+
+        // Clear any existing timeout
+        if (undoTimeoutRef.current) {
+          clearTimeout(undoTimeoutRef.current)
+        }
+
+        // Show undo toast
+        setUndoResource({ id: resourceId, name: resourceName || '' })
+
+        // Auto-hide after 5 seconds
+        undoTimeoutRef.current = setTimeout(() => {
+          setUndoResource(null)
+        }, 5000)
+      } else {
+        next.delete(resourceId)
       }
+
       localStorage.setItem('completedResources', JSON.stringify([...next]))
       return next
     })
+  }
+
+  const undoCompleteResource = () => {
+    if (undoResource) {
+      setCompletedResources(prev => {
+        const next = new Set(prev)
+        next.delete(undoResource.id)
+        localStorage.setItem('completedResources', JSON.stringify([...next]))
+        return next
+      })
+
+      // Clear timeout and hide toast
+      if (undoTimeoutRef.current) {
+        clearTimeout(undoTimeoutRef.current)
+      }
+      setUndoResource(null)
+    }
+  }
+
+  // Cleanup timeout on unmount
+  React.useEffect(() => {
+    return () => {
+      if (undoTimeoutRef.current) {
+        clearTimeout(undoTimeoutRef.current)
+      }
+      if (undoAssignmentTimeoutRef.current) {
+        clearTimeout(undoAssignmentTimeoutRef.current)
+      }
+    }
+  }, [])
+
+  const hideAssignment = (assignmentId: number, assignmentName: string) => {
+    setHiddenAssignments(prev => {
+      const next = new Set(prev)
+      next.add(assignmentId)
+      localStorage.setItem('hiddenAssignments', JSON.stringify([...next]))
+      return next
+    })
+
+    // Clear any existing timeout
+    if (undoAssignmentTimeoutRef.current) {
+      clearTimeout(undoAssignmentTimeoutRef.current)
+    }
+
+    // Show undo toast
+    setUndoHiddenAssignment({ id: assignmentId, name: assignmentName })
+
+    // Auto-hide after 5 seconds
+    undoAssignmentTimeoutRef.current = setTimeout(() => {
+      setUndoHiddenAssignment(null)
+    }, 5000)
+  }
+
+  const undoHideAssignment = () => {
+    if (undoHiddenAssignment) {
+      setHiddenAssignments(prev => {
+        const next = new Set(prev)
+        next.delete(undoHiddenAssignment.id)
+        localStorage.setItem('hiddenAssignments', JSON.stringify([...next]))
+        return next
+      })
+
+      // Clear timeout and hide toast
+      if (undoAssignmentTimeoutRef.current) {
+        clearTimeout(undoAssignmentTimeoutRef.current)
+      }
+      setUndoHiddenAssignment(null)
+    }
   }
 
   const hideCourse = (courseId: number) => {
@@ -460,6 +581,79 @@ function Dashboard() {
         </div>
       )}
 
+      {/* Grades Widget */}
+      {gradedAssignments.length > 0 && (
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-purple-500 rounded-lg flex items-center justify-center">
+                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-bold text-gray-800">{t.myGrades}</h3>
+              <span className="text-xs font-semibold bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">
+                {gradedAssignments.length}
+              </span>
+            </div>
+            <button
+              onClick={toggleGrades}
+              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all duration-200"
+            >
+              <svg className={`w-5 h-5 transform transition-transform duration-200 ${showGrades ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+          </div>
+
+          {showGrades && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 animate-slide-down">
+              {gradedAssignments.map((assignment: any) => (
+                <div key={assignment.id} className="bg-white p-4 rounded-xl shadow-sm border border-purple-100 hover:shadow-md transition-all duration-200 group relative overflow-hidden">
+                  <div className="absolute top-0 start-0 w-1 h-full bg-gradient-to-b from-purple-500 to-indigo-600"></div>
+                  
+                  <div className="flex justify-between items-start gap-3 mb-2">
+                    <div>
+                       <h4 className="font-bold text-gray-800 text-sm leading-tight line-clamp-2 mb-1">
+                         {assignment.name}
+                       </h4>
+                       <p className="text-xs text-gray-500 line-clamp-1">
+                         {getCourseName(assignment.course_name)}
+                       </p>
+                    </div>
+                    <div className="bg-purple-50 px-2 py-1 rounded-lg border border-purple-100 text-center min-w-[3rem]">
+                       <span className="block text-sm font-bold text-purple-700 leading-none" title={assignment.grade}>
+                         {assignment.grade.split('/')[0].trim()} 
+                       </span>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center justify-between text-xs mt-2 pt-2 border-t border-gray-50">
+                    <span className="text-gray-400">
+                       {new Date(assignment.due_date).toLocaleDateString(language === 'he' ? 'he-IL' : 'en-US', {
+                          month: 'short',
+                          day: 'numeric'
+                       })}
+                    </span>
+                    <a
+                      href={assignment.cmid ? `https://moodle.tau.ac.il/mod/assign/view.php?id=${assignment.cmid}` : '#'}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-purple-600 hover:text-purple-800 font-medium flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                    >
+                      {t.submitted}
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                      </svg>
+                    </a>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Grid Layout for Assignments and Materials */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full">
         {/* Pending Assignments Widget */}
@@ -493,28 +687,69 @@ function Dashboard() {
             </div>
             <div className="overflow-y-auto space-y-2 flex-1">
               {pendingAssignments.map((assignment: any) => (
-                <div key={assignment.id} className="bg-white p-3 rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200">
-                  <h4 className="font-semibold text-gray-800 text-sm mb-1 leading-tight">
-                    {assignment.name}
-                  </h4>
-                  <div className="flex items-center gap-2 text-xs text-gray-600 mb-1">
-                    <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                    </svg>
-                    <span className="truncate">
-                      {getCourseName(assignment.course_name)}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 text-xs text-orange-600 font-medium">
-                    <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                    {new Date(assignment.due_date).toLocaleDateString(language === 'he' ? 'he-IL' : 'en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit'
-                    })}
+                <div key={assignment.id} className="bg-white p-3 rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200 group">
+                  <div className="flex items-start gap-2">
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-semibold text-gray-800 text-sm mb-1 leading-tight">
+                        {assignment.name}
+                      </h4>
+                      <div className="flex items-center gap-2 text-xs text-gray-600 mb-1">
+                        <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                        </svg>
+                        <span className="truncate">
+                          {getCourseName(assignment.course_name)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 text-xs text-orange-600 font-medium">
+                          <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                          {new Date(assignment.due_date).toLocaleDateString(language === 'he' ? 'he-IL' : 'en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </div>
+                        {assignment.submitted ? (
+                          <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded text-xs font-semibold whitespace-nowrap">
+                            ✓ {t.submitted}
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded text-xs font-semibold whitespace-nowrap">
+                            {t.notSubmitted}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {/* Action Buttons */}
+                    <div className="flex flex-col gap-1 flex-shrink-0">
+                      {/* Open Assignment Button */}
+                      <a
+                        href={assignment.cmid ? `https://moodle.tau.ac.il/mod/assign/view.php?id=${assignment.cmid}` : '#'}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={`p-1.5 rounded-lg transition-colors duration-200 ${assignment.cmid ? 'text-blue-600 hover:bg-blue-50' : 'text-gray-400 cursor-not-allowed'}`}
+                        title={language === 'he' ? 'פתח מטלה' : 'Open assignment'}
+                        onClick={(e) => !assignment.cmid && e.preventDefault()}
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
+                      </a>
+                      {/* Remove Button */}
+                      <button
+                        onClick={() => hideAssignment(assignment.id, assignment.name)}
+                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all duration-200"
+                        title={language === 'he' ? 'הסר מהדשבורד' : 'Remove from dashboard'}
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -529,7 +764,7 @@ function Dashboard() {
               <h3 className="text-lg font-bold text-gray-800">{t.whatsNew}</h3>
               <p className="text-xs text-gray-600">
                 {resourcesByCourse.length > 0
-                  ? `${resourcesByCourse.reduce((sum, item) => sum + item.resources.length, 0)} ${language === 'he' ? 'קבצים חדשים' : 'new files'}`
+                  ? `${resourcesByCourse.reduce((sum, item) => sum + item.resources.length, 0)} ${language === 'he' ? 'חומרים' : 'materials'}`
                   : t.recentlyAdded}
               </p>
             </div>
@@ -563,7 +798,7 @@ function Dashboard() {
                 </button>
               </div>
               <div className="space-y-2">
-                {coursesWithResources
+                {allCourses
                   .filter((c: any) => hiddenCourses.has(c.id))
                   .map((course: any) => (
                     <div key={course.id} className="flex items-center justify-between p-2 bg-white rounded-lg">
@@ -589,10 +824,10 @@ function Dashboard() {
                   </svg>
                 </div>
                 <h4 className="text-sm font-semibold text-gray-800 mb-1">
-                  {language === 'he' ? 'כל הקבצים נצפו!' : 'All caught up!'}
+                  {language === 'he' ? 'כל החומרים הושלמו!' : 'All materials completed!'}
                 </h4>
                 <p className="text-xs text-gray-500">
-                  {language === 'he' ? 'אין קבצים חדשים' : 'No new materials'}
+                  {language === 'he' ? 'אין חומרים שממתינים' : 'No pending materials'}
                 </p>
               </div>
             </div>
@@ -633,77 +868,89 @@ function Dashboard() {
 
                 {/* Materials List */}
                 <div className="p-3 space-y-1.5">
-                  {item.resources.map((resource: any) => (
-                    <div
-                      key={resource.id}
-                      className="bg-white p-2 rounded-lg border border-gray-200 hover:border-gray-300 transition-all duration-200 flex items-center gap-2"
-                    >
-                      {/* Checkbox */}
-                      <input
-                        type="checkbox"
-                        checked={completedResources.has(resource.id)}
-                        onChange={() => toggleResourceComplete(resource.id)}
-                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 focus:ring-2 cursor-pointer flex-shrink-0"
-                      />
-
-                      {/* File Icon */}
-                      <div className="w-8 h-8 bg-gray-50 rounded-lg flex items-center justify-center flex-shrink-0">
-                        <div className="scale-75">
-                          {getFileIcon(resource.mimetype)}
-                        </div>
-                      </div>
-
-                      {/* File Info */}
-                      <div className="flex-1 min-w-0">
-                        <h4 className="font-semibold text-gray-800 text-xs mb-0.5 truncate">
-                          {resource.filename}
-                        </h4>
-                        <div className="flex items-center gap-1.5 text-xs text-gray-500">
-                          {resource.filesize && (
-                            <span>{formatFileSize(resource.filesize)}</span>
-                          )}
-                          {resource.time_created && resource.filesize && (
-                            <span>•</span>
-                          )}
-                          {resource.time_created && (
-                            <span>
-                              {new Date(resource.time_created).toLocaleDateString(language === 'he' ? 'he-IL' : 'en-US', {
-                                month: 'short',
-                                day: 'numeric'
-                              })}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Action Buttons */}
-                      <div className="flex items-center gap-0.5">
-                        {/* Open Button */}
-                        <a
-                          href={resource.download_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex-shrink-0 p-1.5 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors duration-200"
-                          title={language === 'he' ? 'פתח' : 'Open'}
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                          </svg>
-                        </a>
-                        {/* Download Button */}
-                        <a
-                          href={resource.download_url}
-                          download={resource.filename}
-                          className="flex-shrink-0 p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors duration-200"
-                          title={t.download}
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                          </svg>
-                        </a>
-                      </div>
+                  {item.resources.length === 0 ? (
+                    <div className="bg-white p-3 rounded-lg text-center text-gray-500 text-sm">
+                      <svg className="w-8 h-8 mx-auto mb-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      {language === 'he' ? 'כל החומרים הושלמו' : 'All materials completed'}
                     </div>
-                  ))}
+                  ) : (
+                    item.resources.map((resource: any) => (
+                      <div
+                        key={resource.id}
+                        className="bg-white p-2 rounded-lg border border-gray-200 hover:border-gray-300 transition-all duration-200 flex items-center gap-2"
+                      >
+                        {/* Dismiss Button */}
+                        <button
+                          onClick={() => toggleResourceComplete(resource.id, resource.filename)}
+                          className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors duration-200 flex-shrink-0"
+                          title={language === 'he' ? 'סמן כהושלם' : 'Mark as done'}
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+
+                        {/* File Icon */}
+                        <div className="w-8 h-8 bg-gray-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                          <div className="scale-75">
+                            {getFileIcon(resource.mimetype)}
+                          </div>
+                        </div>
+
+                        {/* File Info */}
+                        <div className="flex-1 min-w-0">
+                          <h4 className="font-semibold text-gray-800 text-xs mb-0.5 truncate">
+                            {resource.filename}
+                          </h4>
+                          <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                            {resource.filesize && (
+                              <span>{formatFileSize(resource.filesize)}</span>
+                            )}
+                            {resource.time_created && resource.filesize && (
+                              <span>•</span>
+                            )}
+                            {resource.time_created && (
+                              <span>
+                                {new Date(resource.time_created).toLocaleDateString(language === 'he' ? 'he-IL' : 'en-US', {
+                                  month: 'short',
+                                  day: 'numeric'
+                                })}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Action Buttons */}
+                        <div className="flex items-center gap-0.5">
+                          {/* Open Button */}
+                          <a
+                            href={resource.download_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex-shrink-0 p-1.5 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors duration-200"
+                            title={language === 'he' ? 'פתח' : 'Open'}
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                            </svg>
+                          </a>
+                          {/* Download Button */}
+                          <a
+                            href={resource.download_url}
+                            download={resource.filename}
+                            className="flex-shrink-0 p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors duration-200"
+                            title={t.download}
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                            </svg>
+                          </a>
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             )
@@ -712,6 +959,62 @@ function Dashboard() {
           )}
         </div>
       </div>
+
+      {/* Undo Toast for Resources */}
+      {undoResource && (
+        <div className="fixed bottom-8 start-1/2 -translate-x-1/2 z-50 animate-slide-up">
+          <div className="bg-gray-800 text-white px-4 py-3 rounded-lg shadow-xl flex items-center gap-3 max-w-md">
+            <svg className="w-5 h-5 text-green-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+            <span className="text-sm flex-1">
+              {language === 'he' ? 'הקובץ סומן כהושלם' : 'Marked as completed'}
+            </span>
+            <button
+              onClick={undoCompleteResource}
+              className="px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded text-sm font-medium transition-colors duration-200"
+            >
+              {language === 'he' ? 'בטל' : 'Undo'}
+            </button>
+            <button
+              onClick={() => setUndoResource(null)}
+              className="text-gray-400 hover:text-white transition-colors duration-200"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Undo Toast for Assignments */}
+      {undoHiddenAssignment && (
+        <div className="fixed bottom-8 start-1/2 -translate-x-1/2 z-50 animate-slide-up">
+          <div className="bg-gray-800 text-white px-4 py-3 rounded-lg shadow-xl flex items-center gap-3 max-w-md">
+            <svg className="w-5 h-5 text-orange-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span className="text-sm flex-1">
+              {language === 'he' ? 'המטלה הוסרה מהדשבורד' : 'Assignment removed from dashboard'}
+            </span>
+            <button
+              onClick={undoHideAssignment}
+              className="px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded text-sm font-medium transition-colors duration-200"
+            >
+              {language === 'he' ? 'בטל' : 'Undo'}
+            </button>
+            <button
+              onClick={() => setUndoHiddenAssignment(null)}
+              className="text-gray-400 hover:text-white transition-colors duration-200"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -823,11 +1126,8 @@ function Assignments() {
                   </div>
                 </div>
 
-                {/* Status Badge */}
+                {/* Status Badge and Action Button */}
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  {assignment.is_new && (
-                    <span className="badge badge-new">{t.newBadge}</span>
-                  )}
                   {assignment.submitted ? (
                     <span className="px-3 py-1.5 bg-green-100 text-green-700 rounded-lg text-sm font-semibold whitespace-nowrap">
                       ✓ {t.submitted}
@@ -837,6 +1137,19 @@ function Assignments() {
                       {t.notSubmitted}
                     </span>
                   )}
+                  {/* Open Assignment Button */}
+                  <a
+                    href={assignment.cmid ? `https://moodle.tau.ac.il/mod/assign/view.php?id=${assignment.cmid}` : '#'}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={`p-2 rounded-lg transition-colors duration-200 ${assignment.cmid ? 'text-blue-600 hover:bg-blue-50' : 'text-gray-400 cursor-not-allowed'}`}
+                    title={language === 'he' ? 'פתח מטלה' : 'Open assignment'}
+                    onClick={(e) => !assignment.cmid && e.preventDefault()}
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    </svg>
+                  </a>
                 </div>
               </div>
             </div>
