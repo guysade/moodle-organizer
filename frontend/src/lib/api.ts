@@ -29,8 +29,13 @@ export const getNewResources = async () => {
 }
 
 export const getSchedule = async () => {
-  const { data } = await api.get('/api/schedule/')
-  return data
+  const response = await api.get('/api/schedule/')
+  return response.data
+}
+
+export const getExams = async () => {
+  const response = await api.get('/api/exams/')
+  return response.data
 }
 
 export const triggerSync = async () => {

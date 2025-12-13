@@ -2,7 +2,7 @@ import React from 'react'
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom'
 import { useLanguage } from './lib/LanguageContext'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { getCourses, getAssignments, getNewResources, getResources, getSchedule, triggerSync } from './lib/api'
+import { getCourses, getAssignments, getNewResources, getResources, getSchedule, getExams, triggerSync } from './lib/api'
 
 function App() {
   return (
@@ -114,6 +114,16 @@ function AppContent() {
           </Link>
 
           <Link
+            to="/exams"
+            className={`nav-link ${isActive('/exams') ? 'active' : ''} flex items-center gap-3`}
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+            </svg>
+            {t.exams}
+          </Link>
+
+          <Link
             to="/courses"
             className={`nav-link ${isActive('/courses') ? 'active' : ''} flex items-center gap-3`}
           >
@@ -155,6 +165,7 @@ function AppContent() {
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/assignments" element={<Assignments />} />
+            <Route path="/exams" element={<Exams />} />
             <Route path="/courses" element={<Courses />} />
             <Route path="/schedule" element={<Schedule />} />
           </Routes>
@@ -166,6 +177,10 @@ function AppContent() {
 
 function Dashboard() {
   const { t, language } = useLanguage()
+  const { data: exams } = useQuery({
+    queryKey: ['exams'],
+    queryFn: getExams
+  })
   const { data: resources, isLoading: resourcesLoading, isError: resourcesError } = useQuery({
     queryKey: ['resources'],
     queryFn: getResources
@@ -182,6 +197,34 @@ function Dashboard() {
     queryKey: ['schedule'],
     queryFn: getSchedule
   })
+
+  // Find next exam
+  const nextExam = React.useMemo(() => {
+    if (!exams) return null
+    const now = new Date()
+    now.setHours(0, 0, 0, 0)
+    
+    // Filter future exams and sort by date
+    const futureExams = exams
+      .filter((e: any) => new Date(e.date) >= now)
+      .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime())
+      
+    return futureExams[0] || null
+  }, [exams])
+
+  const getDaysLeft = (dateStr: string) => {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const examDate = new Date(dateStr)
+    examDate.setHours(0, 0, 0, 0)
+    
+    const diffTime = examDate.getTime() - today.getTime()
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+    
+    if (diffDays === 0) return { text: t.today, color: 'text-red-600' }
+    if (diffDays === 1) return { text: t.tomorrow, color: 'text-orange-600' }
+    return { text: `${diffDays} ${t.daysLeft}`, color: 'text-blue-600' }
+  }
 
   // Track current time for live updates
   const [currentTime, setCurrentTime] = React.useState(new Date())
@@ -576,6 +619,71 @@ function Dashboard() {
                   <p className="text-sm font-semibold">{currentCourse.location}</p>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Next Exam Widget */}
+      {nextExam && (
+        <div className="mb-4 card p-4 bg-gradient-to-br from-blue-50 to-indigo-50 border-l-4 border-blue-500">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center">
+                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-gray-800">
+                  {t.nextExam}
+                </h3>
+                <p className="text-xs text-gray-600">
+                  {new Date(nextExam.date).toLocaleDateString(language === 'he' ? 'he-IL' : 'en-US', {
+                    weekday: 'long',
+                    day: 'numeric',
+                    month: 'long'
+                  })}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className={`text-sm font-bold ${getDaysLeft(nextExam.date).color}`}>
+                {getDaysLeft(nextExam.date).text}
+              </span>
+            </div>
+          </div>
+          <div className="bg-white p-3 rounded-lg shadow-sm">
+            <h4 className="text-xl font-bold text-gray-800 mb-2 leading-tight">
+              {nextExam.course_name}
+            </h4>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex items-center gap-2 text-gray-600">
+                <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <div>
+                  <p className="text-xs text-gray-500">{language === 'he' ? 'שעה' : 'Time'}</p>
+                  <p className="text-sm font-semibold">
+                    {new Date(nextExam.date).toLocaleTimeString(language === 'he' ? 'he-IL' : 'en-US', {
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })}
+                  </p>
+                </div>
+              </div>
+              {nextExam.location && (
+                <div className="flex items-center gap-2 text-gray-600">
+                  <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  <div>
+                    <p className="text-xs text-gray-500">{t.location}</p>
+                    <p className="text-sm font-semibold">{nextExam.location}</p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1229,6 +1337,163 @@ function Courses() {
             </div>
           ))}
         </div>
+      )}
+    </div>
+  )
+}
+
+function Exams() {
+  const { t, language } = useLanguage()
+  const { data: exams, isLoading, isError } = useQuery({
+    queryKey: ['exams'],
+    queryFn: getExams
+  })
+
+  // Group exams by Moed (A, B)
+  const groupedExams = React.useMemo(() => {
+    if (!exams) return { moedA: [], moedB: [] }
+    
+    const moedA: any[] = []
+    const moedB: any[] = []
+    
+    exams.forEach((exam: any) => {
+      if (exam.description && exam.description.includes('מועד ב')) {
+        moedB.push(exam)
+      } else {
+        moedA.push(exam)
+      }
+    })
+
+    // Sort by date
+    const sortByDate = (a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime()
+    moedA.sort(sortByDate)
+    moedB.sort(sortByDate)
+
+    return { moedA, moedB }
+  }, [exams])
+
+  const getDaysLeft = (dateStr: string) => {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const examDate = new Date(dateStr)
+    examDate.setHours(0, 0, 0, 0)
+    
+    const diffTime = examDate.getTime() - today.getTime()
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+    
+    if (diffDays < 0) return { text: t.passed, color: 'text-gray-400 bg-gray-50' }
+    if (diffDays === 0) return { text: t.today, color: 'text-red-700 bg-red-100' }
+    if (diffDays === 1) return { text: t.tomorrow, color: 'text-orange-700 bg-orange-100' }
+    return { text: `${diffDays} ${t.daysLeft}`, color: 'text-blue-700 bg-blue-100' }
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="spinner" />
+      </div>
+    )
+  }
+
+  if (isError) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="text-center">
+          <p className="text-red-600 mb-2">{t.error}</p>
+        </div>
+      </div>
+    )
+  }
+
+  const renderExamList = (examList: any[], title: string) => (
+    <div className="mb-8">
+      <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+        <span className="w-2 h-8 bg-blue-500 rounded-full"></span>
+        {title}
+      </h3>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {examList.map((exam: any) => {
+          const daysLeft = getDaysLeft(exam.date)
+          return (
+            <div key={exam.id} className="card p-4 hover:shadow-md transition-shadow duration-200 border-t-4 border-blue-500">
+              <div className="flex justify-between items-start mb-2">
+                <h4 className="font-bold text-lg text-gray-800 leading-tight flex-1">
+                  {exam.course_name}
+                </h4>
+                <span className={`text-xs font-bold px-2 py-1 rounded-full whitespace-nowrap ms-2 ${daysLeft.color}`}>
+                  {daysLeft.text}
+                </span>
+              </div>
+              
+              <div className="space-y-2 text-sm text-gray-600">
+                <div className="flex items-center gap-2">
+                  <svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  <span className="font-medium">
+                    {new Date(exam.date).toLocaleDateString(language === 'he' ? 'he-IL' : 'en-US', {
+                      weekday: 'long',
+                      day: 'numeric',
+                      month: 'long',
+                      year: 'numeric'
+                    })}
+                  </span>
+                </div>
+                
+                <div className="flex items-center gap-2">
+                  <svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span>
+                    {new Date(exam.date).toLocaleTimeString(language === 'he' ? 'he-IL' : 'en-US', {
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })}
+                  </span>
+                </div>
+
+                {exam.location && (
+                  <div className="flex items-center gap-2">
+                    <svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    <span>{exam.location}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="animate-fade-in">
+      <div className="mb-8">
+        <h2 className="text-3xl font-bold text-gray-800 mb-2">{t.upcomingExams}</h2>
+        <p className="text-gray-600">
+          {language === 'he' ? 'לוח מבחנים - סמסטר א\' תשפ"ו' : 'Exam Schedule - Semester A 2026'}
+        </p>
+      </div>
+
+      {!exams || exams.length === 0 ? (
+        <div className="card p-8">
+          <div className="empty-state">
+             <div className="empty-state-icon">
+               <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+               </svg>
+             </div>
+             <h3 className="text-lg font-semibold text-gray-800 mb-2">{t.noData}</h3>
+          </div>
+        </div>
+      ) : (
+        <>
+          {groupedExams.moedA.length > 0 && renderExamList(groupedExams.moedA, language === 'he' ? 'מועד א\'' : 'Moed A')}
+          {groupedExams.moedB.length > 0 && renderExamList(groupedExams.moedB, language === 'he' ? 'מועד ב\'' : 'Moed B')}
+        </>
       )}
     </div>
   )

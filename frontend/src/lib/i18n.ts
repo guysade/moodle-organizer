@@ -6,6 +6,7 @@ export const translations = {
     appName: 'Moodle Organizer',
     dashboard: 'דשבורד',
     assignments: 'מטלות',
+    exams: 'מבחנים',
     courses: 'הקורסים שלי',
     schedule: 'מערכת שעות',
 
@@ -57,7 +58,17 @@ export const translations = {
     type: 'סוג',
     grades: 'ציונים',
     myGrades: 'הציונים שלי',
-    grade: 'ציון'
+    grade: 'ציון',
+    
+    // Exams
+    upcomingExams: 'מבחנים קרובים',
+    allExams: 'כל המבחנים',
+    moed: 'מועד',
+    nextExam: 'הבחינה הבאה',
+    daysLeft: 'ימים נותרו',
+    today: 'היום',
+    tomorrow: 'מחר',
+    passed: 'עבר'
   },
 
   en: {
@@ -65,6 +76,7 @@ export const translations = {
     appName: 'Moodle Organizer',
     dashboard: 'Dashboard',
     assignments: 'Assignments',
+    exams: 'Exams',
     courses: 'My Courses',
     schedule: 'Schedule',
 
@@ -116,7 +128,17 @@ export const translations = {
     type: 'Type',
     grades: 'Grades',
     myGrades: 'My Grades',
-    grade: 'Grade'
+    grade: 'Grade',
+
+    // Exams
+    upcomingExams: 'Upcoming Exams',
+    allExams: 'All Exams',
+    moed: 'Moed',
+    nextExam: 'Next Exam',
+    daysLeft: 'Days left',
+    today: 'Today',
+    tomorrow: 'Tomorrow',
+    passed: 'Passed'
   }
 }
 

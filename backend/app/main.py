@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import engine, Base
-from app.routers import courses, assignments, resources, schedule, sync
+from app.routers import courses, assignments, resources, schedule, sync, exams
 from app.scheduler import start_scheduler, stop_scheduler
 from contextlib import asynccontextmanager
 # Import models to ensure they're registered with Base
@@ -40,6 +40,7 @@ app.include_router(assignments.router)
 app.include_router(resources.router)
 app.include_router(schedule.router)
 app.include_router(sync.router)
+app.include_router(exams.router)
 
 @app.get("/")
 async def root():
