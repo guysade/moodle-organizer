@@ -18,6 +18,7 @@ async def get_courses(db: AsyncSession = Depends(get_db)):
             "fullname": c.fullname,
             "shortname": c.shortname,
             "progress": c.progress,
+            "notebook_url": c.notebook_url,
             "updated_at": c.updated_at.isoformat() if c.updated_at else None
         }
         for c in courses

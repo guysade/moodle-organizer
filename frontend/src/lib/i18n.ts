@@ -9,10 +9,14 @@ export const translations = {
     exams: 'מבחנים',
     courses: 'הקורסים שלי',
     schedule: 'מערכת שעות',
+    notebooks: 'מחברות',
+    materials: 'חומרי לימוד',
 
     // Actions
     sync: 'סנכרון',
     syncing: 'מסנכרן...',
+    syncSuccess: 'הסנכרון הושלם בהצלחה',
+    lastSync: 'סנכרון אחרון:',
     download: 'הורדה',
 
     // Dashboard
@@ -54,6 +58,11 @@ export const translations = {
     // Other
     file: 'קובץ',
     files: 'קבצים',
+    downloadAll: 'הורד הכל (ZIP)',
+    openFile: 'פתח קובץ',
+    filterByCourse: 'סנן לפי קורס',
+    allCourses: 'כל הקורסים',
+    noMaterials: 'לא נמצאו חומרים',
     location: 'מיקום',
     type: 'סוג',
     grades: 'ציונים',
@@ -79,10 +88,14 @@ export const translations = {
     exams: 'Exams',
     courses: 'My Courses',
     schedule: 'Schedule',
+    notebooks: 'Notebooks',
+    materials: 'Course Materials',
 
     // Actions
     sync: 'Sync',
     syncing: 'Syncing...',
+    syncSuccess: 'Sync completed successfully',
+    lastSync: 'Last sync:',
     download: 'Download',
 
     // Dashboard
@@ -124,6 +137,11 @@ export const translations = {
     // Other
     file: 'File',
     files: 'Files',
+    downloadAll: 'Download All (ZIP)',
+    openFile: 'Open File',
+    filterByCourse: 'Filter by Course',
+    allCourses: 'All Courses',
+    noMaterials: 'No materials found',
     location: 'Location',
     type: 'Type',
     grades: 'Grades',

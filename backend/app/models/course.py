@@ -12,5 +12,6 @@ class Course(Base):
     category_id = Column(Integer)
     progress = Column(Integer, default=0)
     visible = Column(Boolean, default=True)
+    notebook_url = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

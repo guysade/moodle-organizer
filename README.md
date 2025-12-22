@@ -20,10 +20,17 @@ A modern, bilingual (Hebrew/English) web application for Tel Aviv University stu
 - **Hebrew Support**: Course names, times, and locations in Hebrew
 - **Responsive Design**: Works on desktop and mobile
 
-### 📄 Resources
+### 📄 Resources & Materials
+- **Course Materials Tab**: Dedicated file browser for all course contents
+- **Section Organization**: Files are grouped by Moodle sections (e.g., Week 1, Lectures)
+- **Direct Downloads**: One-click download of individual files
+- **Bulk Download**: Download entire course contents as a ZIP file
 - **Dashboard**: "What's New" section showing recently added materials
-- **Direct Downloads**: One-click download of course materials from Moodle
 - **File Metadata**: View file types, sizes, and upload dates
+
+### 📓 Notebooks
+- **Integrated NotebookLM**: Quick access to Google NotebookLM notebooks for each course
+- **Course-Specific Links**: Automatically maps courses to their corresponding notebooks
 
 ### ✅ Assignments
 - **Upcoming Deadlines**: Sorted list of assignments with due dates
@@ -87,6 +94,7 @@ moodle-organizer/
 ├── frontend/
 │   ├── src/
 │   │   ├── lib/             # API & i18n
+│   │   ├── pages/           # Page components
 │   │   ├── App.tsx          # Main component
 │   │   ├── main.tsx         # Entry point
 │   │   └── index.css        # Styles
@@ -97,6 +105,7 @@ moodle-organizer/
 ├── .env.example            # Template
 ├── schedule.json           # Your class schedule
 └── PROJECT_SPEC.md        # Original specification
+```
 
 ## 🚀 Getting Started
 
@@ -131,38 +140,41 @@ moodle-organizer/
    docker compose up -d
    ```
 
-4. **Trigger initial sync**
+4. **Run Migrations**
+   ```bash
+   # Add new columns for notebooks and sections
+   docker exec moodle_backend python migrate_add_notebook_url.py
+   docker exec moodle_backend python migrate_add_section.py
+   
+   # Populate notebook data
+   docker exec moodle_backend python populate_notebooks.py
+   ```
+
+5. **Trigger initial sync**
    ```bash
    curl -X POST http://localhost:8000/api/sync/
    ```
 
-5. **Access the application**
+6. **Access the application**
    - Frontend: http://localhost:5173
    - Backend API: http://localhost:8000
    - API Docs: http://localhost:8000/docs
-
-### Getting Your Moodle Token
-
-1. Go to https://moodle.tau.ac.il/admin/tool/mobile/launch.php?service=moodle_mobile_app&passport=1&url_scheme=moodlemobile
-2. Open browser DevTools (F12) → Network tab
-3. Find a request with `wstoken=` in the URL
-4. The token format is: `prefix:::actual_token`
-5. Use only the **second part** (after `:::`)
 
 ## 📖 API Documentation
 
 ### Endpoints
 
 #### Courses
-- `GET /api/courses/` - List all courses
+- `GET /api/courses/` - List all courses with notebook URLs
 
 #### Assignments
 - `GET /api/assignments/` - List assignments with due dates
 
 #### Resources
-- `GET /api/resources/` - List all resources
+- `GET /api/resources/` - List all resources with section info
 - `GET /api/resources/?course_id=123` - Filter by course
 - `GET /api/resources/new` - Get 20 newest resources
+- `GET /api/resources/download-zip/{course_id}` - Download course contents as ZIP
 
 #### Schedule
 - `GET /api/schedule/` - Get weekly class schedule
@@ -174,76 +186,6 @@ moodle-organizer/
 - `GET /` - API status
 - `GET /health` - Health check
 - `GET /scheduler/status` - Scheduler status & next run time
-
-## 🔧 Configuration
-
-### Environment Variables
-
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `MOODLE_URL` | TAU Moodle URL | `https://moodle.tau.ac.il` |
-| `MOODLE_TOKEN` | Your Moodle API token | `785a2fa52a777c5fab766e64fe01add3` |
-| `MOODLE_USER_ID` | Your Moodle user ID | `191391` |
-| `POSTGRES_USER` | Database username | `moodle_user` |
-| `POSTGRES_PASSWORD` | Database password | `secure_password` |
-| `POSTGRES_DB` | Database name | `moodle_organizer` |
-| `DATABASE_URL` | Full database connection URL | See `.env.example` |
-| `BACKEND_PORT` | Backend port | `8000` |
-| `SYNC_SCHEDULE_CRON` | Sync schedule (cron format) | `0 4 * * *` (4 AM daily) |
-| `VITE_API_URL` | Frontend API URL | `http://localhost:8000` |
-
-### Sync Schedule
-
-The sync schedule uses cron format: `minute hour day month day_of_week`
-
-Examples:
-- `0 4 * * *` - Daily at 4:00 AM (default)
-- `0 */6 * * *` - Every 6 hours
-- `0 9,17 * * *` - 9 AM and 5 PM daily
-- `0 8 * * 1-5` - 8 AM on weekdays only
-
-## 🛠️ Development
-
-### Backend Development
-
-```bash
-# Install dependencies
-cd backend
-pip install -r requirements.txt
-
-# Run locally (without Docker)
-uvicorn app.main:app --reload
-```
-
-### Frontend Development
-
-```bash
-# Install dependencies
-cd frontend
-npm install
-
-# Run dev server
-npm run dev
-```
-
-### Database Management
-
-```bash
-# Access database
-docker compose exec db psql -U moodle_user -d moodle_organizer
-
-# View tables
-\dt
-
-# Query data
-SELECT * FROM courses;
-SELECT * FROM assignments;
-SELECT * FROM resources;
-
-# Reset database
-docker compose exec db psql -U moodle_user -d moodle_organizer -c "DROP TABLE IF EXISTS resources, assignments, courses CASCADE;"
-docker compose restart backend
-```
 
 ## 📊 Database Schema
 
@@ -257,6 +199,7 @@ CREATE TABLE courses (
   category_id INTEGER,
   progress INTEGER DEFAULT 0,
   visible BOOLEAN DEFAULT TRUE,
+  notebook_url VARCHAR,
   created_at TIMESTAMP,
   updated_at TIMESTAMP
 );
@@ -267,10 +210,13 @@ CREATE TABLE courses (
 CREATE TABLE assignments (
   id SERIAL PRIMARY KEY,
   moodle_id BIGINT UNIQUE NOT NULL,
+  cmid BIGINT,
   course_id BIGINT REFERENCES courses(moodle_id),
   name VARCHAR NOT NULL,
   due_date TIMESTAMP,
   description VARCHAR,
+  grade VARCHAR,
+  submitted BOOLEAN DEFAULT FALSE,
   is_new BOOLEAN DEFAULT TRUE,
   created_at TIMESTAMP,
   updated_at TIMESTAMP
@@ -287,72 +233,13 @@ CREATE TABLE resources (
   file_url VARCHAR UNIQUE NOT NULL,
   mimetype VARCHAR,
   filesize INTEGER,
+  section VARCHAR,
   time_created TIMESTAMP,
   is_new BOOLEAN DEFAULT TRUE,
   created_at TIMESTAMP,
   updated_at TIMESTAMP
 );
 ```
-
-## 🐛 Troubleshooting
-
-### Backend won't start
-```bash
-# Check logs
-docker compose logs backend
-
-# Restart backend
-docker compose restart backend
-```
-
-### Database issues
-```bash
-# Check database health
-docker compose exec db pg_isready -U moodle_user
-
-# Restart database
-docker compose restart db
-```
-
-### Frontend not loading
-```bash
-# Check logs
-docker compose logs frontend
-
-# Rebuild frontend
-docker compose up -d --build frontend
-```
-
-### Sync not working
-```bash
-# Check scheduler status
-curl http://localhost:8000/scheduler/status
-
-# Trigger manual sync
-curl -X POST http://localhost:8000/api/sync/
-
-# Check sync logs
-docker compose logs backend | grep -i sync
-```
-
-## 🔒 Security Notes
-
-- **Never commit** `.env` file to Git
-- Store Moodle token securely
-- Change default database password in production
-- Use HTTPS in production
-- Regularly update dependencies
-
-## 📝 Future Enhancements
-
-- [ ] Mark assignments as completed
-- [ ] Push notifications for new content
-- [ ] Filter courses by semester
-- [ ] Export schedule to iCal format
-- [ ] Dark mode
-- [ ] Mobile app
-- [ ] Email notifications
-- [ ] Assignment reminders
 
 ## 🤝 Contributing
 

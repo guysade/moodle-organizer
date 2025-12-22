@@ -38,6 +38,21 @@ export const getExams = async () => {
   return response.data
 }
 
+export const downloadCourseZip = async (courseId: number, filename: string) => {
+  const response = await api.get(`/api/resources/download-zip/${courseId}`, {
+    responseType: 'blob'
+  })
+  
+  // Create blob link to download
+  const url = window.URL.createObjectURL(new Blob([response.data]))
+  const link = document.createElement('a')
+  link.href = url
+  link.setAttribute('download', filename)
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+}
+
 export const triggerSync = async () => {
   const { data } = await api.post('/api/sync/')
   return data

@@ -3,10 +3,12 @@ import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-do
 import { useLanguage } from './lib/LanguageContext'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getCourses, getAssignments, getNewResources, getResources, getSchedule, getExams, triggerSync } from './lib/api'
+import Notebooks from './pages/Notebooks'
+import CourseMaterials from './pages/CourseMaterials'
 
 function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <AppContent />
     </BrowserRouter>
   )
@@ -46,6 +48,11 @@ function AppContent() {
     return fullname.replace(/^\d+\s*-\s*/, '').trim()
   }
 
+  const [showSyncSuccess, setShowSyncSuccess] = React.useState(false)
+  const [lastSync, setLastSync] = React.useState<string | null>(() => {
+    return localStorage.getItem('lastSync')
+  })
+
   const syncMutation = useMutation({
     mutationFn: triggerSync,
     onSuccess: () => {
@@ -54,6 +61,12 @@ function AppContent() {
         queryClient.invalidateQueries({ queryKey: ['courses'] })
         queryClient.invalidateQueries({ queryKey: ['assignments'] })
         queryClient.invalidateQueries({ queryKey: ['resources'] })
+        
+        const now = new Date().toISOString()
+        setLastSync(now)
+        localStorage.setItem('lastSync', now)
+        setShowSyncSuccess(true)
+        setTimeout(() => setShowSyncSuccess(false), 3000)
       }, 2000)
     }
   })
@@ -134,6 +147,26 @@ function AppContent() {
           </Link>
 
           <Link
+            to="/materials"
+            className={`nav-link ${isActive('/materials') ? 'active' : ''} flex items-center gap-3`}
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+            </svg>
+            {t.materials}
+          </Link>
+
+          <Link
+            to="/notebooks"
+            className={`nav-link ${isActive('/notebooks') ? 'active' : ''} flex items-center gap-3`}
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+            </svg>
+            {t.notebooks || 'Notebooks'}
+          </Link>
+
+          <Link
             to="/schedule"
             className={`nav-link ${isActive('/schedule') ? 'active' : ''} flex items-center gap-3`}
           >
@@ -149,15 +182,37 @@ function AppContent() {
           <button
             onClick={() => syncMutation.mutate()}
             disabled={syncMutation.isPending}
-            className="w-full btn btn-primary flex items-center justify-center gap-2 shadow-lg"
+            className="w-full btn btn-primary flex items-center justify-center gap-2 shadow-lg mb-2"
           >
             <svg className={`w-5 h-5 ${syncMutation.isPending ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
             {syncMutation.isPending ? t.syncing : t.sync}
           </button>
+          {lastSync && (
+            <p className="text-xs text-gray-500 text-center">
+              {t.lastSync} {new Date(lastSync).toLocaleTimeString(language === 'he' ? 'he-IL' : 'en-US', {
+                hour: '2-digit',
+                minute: '2-digit',
+                day: 'numeric',
+                month: 'numeric'
+              })}
+            </p>
+          )}
         </div>
       </aside>
+
+      {/* Sync Success Toast */}
+      {showSyncSuccess && (
+        <div className="fixed bottom-8 start-1/2 -translate-x-1/2 z-50 animate-slide-up">
+          <div className="bg-gray-800 text-white px-4 py-3 rounded-lg shadow-xl flex items-center gap-3">
+            <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+            <span className="text-sm font-medium">{t.syncSuccess}</span>
+          </div>
+        </div>
+      )}
 
       {/* Main Content */}
       <main className="ms-72 p-8 min-h-screen">
@@ -167,6 +222,8 @@ function AppContent() {
             <Route path="/assignments" element={<Assignments />} />
             <Route path="/exams" element={<Exams />} />
             <Route path="/courses" element={<Courses />} />
+            <Route path="/materials" element={<CourseMaterials />} />
+            <Route path="/notebooks" element={<Notebooks />} />
             <Route path="/schedule" element={<Schedule />} />
           </Routes>
         </div>
@@ -963,6 +1020,19 @@ function Dashboard() {
                       </p>
                     </div>
                   </div>
+                  {item.course.notebook_url && (
+                    <a
+                      href={item.course.notebook_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="p-1 hover:bg-white hover:bg-opacity-20 rounded transition-colors duration-200 flex-shrink-0 me-1"
+                      title={language === 'he' ? 'פתח מחברת' : 'Open Notebook'}
+                    >
+                      <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                      </svg>
+                    </a>
+                  )}
                   <button
                     onClick={() => hideCourse(item.course.id)}
                     className="p-1 hover:bg-white hover:bg-opacity-20 rounded transition-colors duration-200 flex-shrink-0"

@@ -157,6 +157,8 @@ class SyncService:
             if 'modules' not in module:
                 continue
 
+            section_name = module.get('name', 'General')
+
             for mod in module['modules']:
                 if 'contents' not in mod:
                     continue
@@ -179,9 +181,13 @@ class SyncService:
                             course_id=course_id,
                             filename=content.get('filename', 'unknown'),
                             file_url=file_url,
+                            section=section_name,
                             mimetype=content.get('mimetype', ''),
                             filesize=content.get('filesize', 0),
                             time_created=datetime.fromtimestamp(content['timecreated']) if content.get('timecreated') else None,
                             is_new=True
                         )
                         self.db.add(resource)
+                    elif existing.section != section_name:
+                        # Update section if changed
+                        existing.section = section_name

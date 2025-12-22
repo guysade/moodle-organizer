@@ -13,6 +13,7 @@ class Resource(Base):
     file_url = Column(String, nullable=False, unique=True, index=True)  # Use URL as unique identifier
     mimetype = Column(String)
     filesize = Column(Integer)
+    section = Column(String, nullable=True)
     time_created = Column(DateTime, nullable=True)
     is_new = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
