@@ -61,6 +61,7 @@ function AppContent() {
         queryClient.invalidateQueries({ queryKey: ['courses'] })
         queryClient.invalidateQueries({ queryKey: ['assignments'] })
         queryClient.invalidateQueries({ queryKey: ['resources'] })
+        queryClient.invalidateQueries({ queryKey: ['newResources'] })
         
         const now = new Date().toISOString()
         setLastSync(now)
@@ -189,14 +190,18 @@ function AppContent() {
             </svg>
             {syncMutation.isPending ? t.syncing : t.sync}
           </button>
-          {lastSync && (
-            <p className="text-xs text-gray-500 text-center">
+          {lastSync ? (
+            <p className="text-[10px] text-gray-500 text-center mt-2">
               {t.lastSync} {new Date(lastSync).toLocaleTimeString(language === 'he' ? 'he-IL' : 'en-US', {
                 hour: '2-digit',
                 minute: '2-digit',
                 day: 'numeric',
                 month: 'numeric'
               })}
+            </p>
+          ) : (
+            <p className="text-[10px] text-gray-400 text-center mt-2 italic">
+              {language === 'he' ? 'טרם בוצע סנכרון' : 'Never synced'}
             </p>
           )}
         </div>
@@ -239,8 +244,8 @@ function Dashboard() {
     queryFn: getExams
   })
   const { data: resources, isLoading: resourcesLoading, isError: resourcesError } = useQuery({
-    queryKey: ['resources'],
-    queryFn: getResources
+    queryKey: ['newResources'],
+    queryFn: getNewResources
   })
   const { data: courses, isLoading: coursesLoading, isError: coursesError } = useQuery({
     queryKey: ['courses'],
