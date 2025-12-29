@@ -145,10 +145,13 @@ class SyncService:
                 )
                 self.db.add(assignment)
             else:
-                # Update existing assignment's submission status, grade and cmid
+                # Update existing assignment's fields (including due_date which may change)
                 existing.submitted = submitted
                 existing.grade = grade
-                existing.cmid = assign_data.get('cmid')  # Update cmid if changed
+                existing.cmid = assign_data.get('cmid')
+                existing.due_date = due_date
+                existing.name = assign_data.get('name', '')
+                existing.description = assign_data.get('intro', '')
                 existing.updated_at = datetime.utcnow()
 
     async def _sync_resources(self, course_id: int, contents: list):
