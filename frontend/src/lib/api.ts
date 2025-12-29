@@ -38,16 +38,32 @@ export const getExams = async () => {
   return response.data
 }
 
-export const downloadCourseZip = async (courseId: number, filename: string) => {
+export const downloadCourseZip = async (courseId: number, filename: string, flat: boolean = false) => {
   const response = await api.get(`/api/resources/download-zip/${courseId}`, {
+    params: { flat },
     responseType: 'blob'
   })
-  
+
   // Create blob link to download
   const url = window.URL.createObjectURL(new Blob([response.data]))
   const link = document.createElement('a')
   link.href = url
   link.setAttribute('download', filename)
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+}
+
+export const downloadAllResourcesZip = async () => {
+  const response = await api.get('/api/resources/download-all-zip', {
+    responseType: 'blob'
+  })
+
+  // Create blob link to download
+  const url = window.URL.createObjectURL(new Blob([response.data]))
+  const link = document.createElement('a')
+  link.href = url
+  link.setAttribute('download', 'all_course_materials.zip')
   document.body.appendChild(link)
   link.click()
   link.remove()

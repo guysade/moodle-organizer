@@ -88,10 +88,10 @@ export default function CourseMaterials() {
     return grouped
   }, [resources, courses, language])
 
-  const handleDownloadZip = async (courseId: number, courseName: string) => {
+  const handleDownloadZip = async (courseId: number, courseName: string, flat: boolean = false) => {
     try {
       setDownloadingZip(courseId)
-      await downloadCourseZip(courseId, `${courseName}.zip`)
+      await downloadCourseZip(courseId, `${courseName}.zip`, flat)
     } catch (error) {
       console.error('Failed to download zip', error)
       alert(t.error)
@@ -179,22 +179,40 @@ export default function CourseMaterials() {
                       {course.shortname}
                     </p>
                   </div>
-                  <button
-                    onClick={() => handleDownloadZip(course.moodle_id, getCourseName(course.fullname))}
-                    disabled={downloadingZip === course.moodle_id}
-                    className="btn btn-primary flex items-center justify-center gap-2 whitespace-nowrap"
-                  >
-                    {downloadingZip === course.moodle_id ? (
-                      <svg className="w-5 h-5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                      </svg>
-                    ) : (
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                      </svg>
-                    )}
-                    {t.downloadAll}
-                  </button>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <button
+                      onClick={() => handleDownloadZip(course.moodle_id, getCourseName(course.fullname), false)}
+                      disabled={downloadingZip === course.moodle_id}
+                      className="btn btn-primary flex items-center justify-center gap-2 whitespace-nowrap text-sm"
+                    >
+                      {downloadingZip === course.moodle_id ? (
+                        <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                      ) : (
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                        </svg>
+                      )}
+                      {t.downloadOrganized}
+                    </button>
+                    <button
+                      onClick={() => handleDownloadZip(course.moodle_id, getCourseName(course.fullname), true)}
+                      disabled={downloadingZip === course.moodle_id}
+                      className="btn bg-gray-100 text-gray-700 hover:bg-gray-200 flex items-center justify-center gap-2 whitespace-nowrap text-sm"
+                    >
+                      {downloadingZip === course.moodle_id ? (
+                        <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                      ) : (
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                      )}
+                      {t.downloadFlat}
+                    </button>
+                  </div>
                 </div>
 
                 {/* Sections and Files */}
