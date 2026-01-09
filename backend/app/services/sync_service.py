@@ -5,7 +5,7 @@ from app.services.moodle_client import MoodleClient
 from app.models.course import Course
 from app.models.assignment import Assignment
 from app.models.resource import Resource
-from datetime import datetime
+from datetime import datetime, timezone
 
 class SyncService:
     def __init__(self, db: AsyncSession):
@@ -125,7 +125,7 @@ class SyncService:
 
             due_date = None
             if assign_data.get('duedate'):
-                due_date = datetime.fromtimestamp(assign_data['duedate'])
+                due_date = datetime.fromtimestamp(assign_data['duedate'], tz=timezone.utc)
 
             # Get submission status and grade from maps
             submitted = submission_status_map.get(assign_data['id'], False)
@@ -187,7 +187,7 @@ class SyncService:
                             section=section_name,
                             mimetype=content.get('mimetype', ''),
                             filesize=content.get('filesize', 0),
-                            time_created=datetime.fromtimestamp(content['timecreated']) if content.get('timecreated') else None,
+                            time_created=datetime.fromtimestamp(content['timecreated'], tz=timezone.utc) if content.get('timecreated') else None,
                             is_new=True
                         )
                         self.db.add(resource)

@@ -12,6 +12,7 @@ import shutil
 import tempfile
 import zipfile
 import asyncio
+from datetime import timezone
 
 router = APIRouter(prefix="/api/resources", tags=["Resources"])
 
@@ -35,7 +36,7 @@ async def get_resources(course_id: int = None, db: AsyncSession = Depends(get_db
             "mimetype": r.mimetype,
             "filesize": r.filesize,
             "is_new": r.is_new,
-            "time_created": r.time_created.isoformat() if r.time_created else None
+            "time_created": r.time_created.replace(tzinfo=timezone.utc).isoformat() if r.time_created else None
         }
         for r in resources
     ]
@@ -231,7 +232,7 @@ async def get_new_resources(db: AsyncSession = Depends(get_db)):
             "mimetype": r.mimetype,
             "filesize": r.filesize,
             "is_new": r.is_new,
-            "time_created": r.time_created.isoformat() if r.time_created else None
+            "time_created": r.time_created.replace(tzinfo=timezone.utc).isoformat() if r.time_created else None
         }
         for r in resources
     ]
