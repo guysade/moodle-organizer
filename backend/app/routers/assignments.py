@@ -12,7 +12,6 @@ router = APIRouter(prefix="/api/assignments", tags=["Assignments"])
 async def get_assignments(db: AsyncSession = Depends(get_db)):
     result = await db.execute(
         select(Assignment)
-        .where(Assignment.due_date != None)
         .order_by(Assignment.submitted.asc(), Assignment.due_date.asc())
     )
     assignments = result.scalars().all()
