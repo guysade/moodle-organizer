@@ -80,7 +80,15 @@ class SyncService:
         # Batch fetch submission statuses concurrently
         # We use get_assignment_status which works for students (unlike get_submissions)
         # running them in parallel is much faster than sequential
-        tasks = [self.moodle.get_assignment_status(a['id']) for a in all_assignments]
+        
+        # Limit concurrency to 5 to avoid overwhelming Moodle
+        semaphore = asyncio.Semaphore(5)
+
+        async def fetch_with_semaphore(assign_id):
+            async with semaphore:
+                return await self.moodle.get_assignment_status(assign_id)
+
+        tasks = [fetch_with_semaphore(a['id']) for a in all_assignments]
         if tasks:
             print(f"[DEBUG] Fetching statuses for {len(tasks)} assignments...")
             # Limit concurrency to avoid overwhelming the server or hitting limits
@@ -99,14 +107,24 @@ class SyncService:
             if isinstance(result, Exception):
                 print(f"[ERROR] Failed to fetch status for assignment {assign['id']}: {result}")
             elif isinstance(result, dict):
+                 if 'exception' in result:
+                     print(f"[ERROR] Moodle API error for assignment {assign['id']}: {result}")
+                 
                  # Check if there's a submission with status "submitted" (individual or team)
                  last_attempt = result.get('lastattempt', {})
                  sub_status = last_attempt.get('submission', {}).get('status')
                  team_status = last_attempt.get('teamsubmission', {}).get('status')
                  
-                 if sub_status == 'submitted' or team_status == 'submitted':
+                 # Consider 'graded' as submitted as well
+                 if sub_status in ['submitted', 'graded'] or team_status in ['submitted', 'graded']:
                      is_submitted = True
+                 elif sub_status or team_status:
+                     print(f"[DEBUG] Assignment {assign['id']} has status: sub={sub_status}, team={team_status}")
                  
+                 # DEBUG: Trace specific assignments
+                 if assign['id'] in [13033, 13744]:
+                     print(f"[TRACE] Assign {assign['id']}: sub_status='{sub_status}', team_status='{team_status}', is_submitted={is_submitted}")
+
                  # Extract grade
                  feedback = result.get('feedback', {})
                  grade_display = feedback.get('gradefordisplay')
@@ -125,7 +143,7 @@ class SyncService:
 
             due_date = None
             if assign_data.get('duedate'):
-                due_date = datetime.fromtimestamp(assign_data['duedate'], tz=timezone.utc)
+                due_date = datetime.fromtimestamp(assign_data['duedate'], tz=timezone.utc).replace(tzinfo=None)
 
             # Get submission status and grade from maps
             submitted = submission_status_map.get(assign_data['id'], False)
@@ -187,7 +205,7 @@ class SyncService:
                             section=section_name,
                             mimetype=content.get('mimetype', ''),
                             filesize=content.get('filesize', 0),
-                            time_created=datetime.fromtimestamp(content['timecreated'], tz=timezone.utc) if content.get('timecreated') else None,
+                            time_created=datetime.fromtimestamp(content['timecreated'], tz=timezone.utc).replace(tzinfo=None) if content.get('timecreated') else None,
                             is_new=True
                         )
                         self.db.add(resource)
