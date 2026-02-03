@@ -19,7 +19,11 @@ class MoodleClient:
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.get(self.base_url, params=payload)
             response.raise_for_status()
-            return response.json()
+            data = response.json()
+            # Check for Moodle API errors (invalid token, permission denied, etc.)
+            if isinstance(data, dict) and 'exception' in data:
+                print(f"[MOODLE API ERROR] {wsfunction}: {data.get('message', data)}")
+            return data
 
     async def get_user_courses(self) -> List[Dict]:
         """Fetch all enrolled courses"""
@@ -41,8 +45,9 @@ class MoodleClient:
             return await self._call("mod_assign_get_submission_status",
                                    assignid=assignment_id,
                                    userid=self.user_id)
-        except Exception:
-            # If we can't get status, return empty dict
+        except Exception as e:
+            # If we can't get status, log and return empty dict
+            print(f"[MOODLE ERROR] get_assignment_status({assignment_id}): {type(e).__name__}: {e}")
             return {}
 
     async def get_submissions(self, assignment_ids: List[int]) -> Dict:

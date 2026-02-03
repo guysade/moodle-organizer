@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-do
 import { useLanguage } from './lib/LanguageContext'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getCourses, getAssignments, getNewResources, getResources, getSchedule, getExams, triggerSync } from './lib/api'
+import { AxiosError } from 'axios'
 import Notebooks from './pages/Notebooks'
 import CourseMaterials from './pages/CourseMaterials'
 
@@ -49,6 +50,7 @@ function AppContent() {
   }
 
   const [showSyncSuccess, setShowSyncSuccess] = React.useState(false)
+  const [syncError, setSyncError] = React.useState<string | null>(null)
   const [lastSync, setLastSync] = React.useState<string | null>(() => {
     return localStorage.getItem('lastSync')
   })
@@ -56,19 +58,26 @@ function AppContent() {
   const syncMutation = useMutation({
     mutationFn: triggerSync,
     onSuccess: () => {
+      setSyncError(null)
       // Refetch all data after sync
       setTimeout(() => {
         queryClient.invalidateQueries({ queryKey: ['courses'] })
         queryClient.invalidateQueries({ queryKey: ['assignments'] })
         queryClient.invalidateQueries({ queryKey: ['resources'] })
         queryClient.invalidateQueries({ queryKey: ['newResources'] })
-        
+
         const now = new Date().toISOString()
         setLastSync(now)
         localStorage.setItem('lastSync', now)
         setShowSyncSuccess(true)
         setTimeout(() => setShowSyncSuccess(false), 3000)
       }, 2000)
+    },
+    onError: (error: AxiosError<{ detail?: string }>) => {
+      const errorMessage = error.response?.data?.detail || error.message || 'Sync failed'
+      setSyncError(errorMessage)
+      console.error('Sync error:', error)
+      setTimeout(() => setSyncError(null), 10000)
     }
   })
 
@@ -215,6 +224,23 @@ function AppContent() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
             </svg>
             <span className="text-sm font-medium">{t.syncSuccess}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Sync Error Toast */}
+      {syncError && (
+        <div className="fixed bottom-8 start-1/2 -translate-x-1/2 z-50 animate-slide-up">
+          <div className="bg-red-600 text-white px-4 py-3 rounded-lg shadow-xl flex items-center gap-3 max-w-md">
+            <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span className="text-sm font-medium">{syncError}</span>
+            <button onClick={() => setSyncError(null)} className="ml-2 hover:opacity-80">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           </div>
         </div>
       )}

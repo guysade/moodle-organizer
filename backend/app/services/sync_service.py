@@ -18,6 +18,12 @@ class SyncService:
 
         # 1. Sync courses
         courses = await self.moodle.get_user_courses()
+
+        # Check for Moodle API error
+        if isinstance(courses, dict) and 'exception' in courses:
+            error_msg = courses.get('message', 'Unknown Moodle API error')
+            raise Exception(f"Moodle API error: {error_msg}")
+
         print(f"[DEBUG] Fetched {len(courses)} courses")
         await self._sync_courses(courses)
 
