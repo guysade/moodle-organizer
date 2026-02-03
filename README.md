@@ -155,10 +155,25 @@ moodle-organizer/
    curl -X POST http://localhost:8000/api/sync/
    ```
 
-6. **Access the application**
+3. **Access the application**
    - Frontend: http://localhost:5173
    - Backend API: http://localhost:8000
    - API Docs: http://localhost:8000/docs
+
+### 🔑 How to get your Moodle Token (TAU Students)
+
+Since TAU uses Single Sign-On (SSO), you cannot generate a token via the standard "Security Keys" menu. Follow these steps:
+
+1. **Log in** to your [TAU Moodle](https://moodle.tau.ac.il) account in your browser.
+2. Open **Developer Tools** (Press `F12` or `Right-click > Inspect`).
+3. Go to the **Network** tab and check the **"Preserve log"** checkbox.
+4. Paste this URL into your browser address bar:
+   `https://moodle.tau.ac.il/admin/tool/mobile/launch.php?service=moodle_mobile_app&passport=1&urlscheme=moodlemobile`
+5. A popup might ask to open an app; you can cancel it.
+6. In the **Network** tab, look for a request starting with `moodlemobile://token=...`.
+7. The part after `token=` is a base64 string. It looks like `LONG_STRING::TOKEN`.
+8. Copy the **entire string after `token=`** and paste it into a Base64 decoder, or look for the plain text token at the end of the string (usually 32 characters).
+   - *Example:* If you see `...token=ABC...::12345...`, your token is `12345...`.
 
 ## 📖 API Documentation
 
