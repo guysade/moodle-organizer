@@ -372,7 +372,7 @@ function Dashboard() {
       .filter((a: any) => hiddenAssignments.has(a.id))
   }, [assignments, hiddenAssignments])
 
-  // Track visibility of grades section
+  // Track visibility of grades section (collapse/expand)
   const [showGrades, setShowGrades] = React.useState(() => {
     const saved = localStorage.getItem('showGrades')
     return saved ? JSON.parse(saved) : true
@@ -386,11 +386,43 @@ function Dashboard() {
     })
   }
 
-  // Get graded assignments
+  // Track which grades are hidden from dashboard
+  const [hiddenGrades, setHiddenGrades] = React.useState<Set<number>>(() => {
+    const saved = localStorage.getItem('hiddenGrades')
+    return saved ? new Set(JSON.parse(saved)) : new Set()
+  })
+
+  const hideGrade = (assignmentId: number) => {
+    setHiddenGrades(prev => {
+      const next = new Set(prev)
+      next.add(assignmentId)
+      localStorage.setItem('hiddenGrades', JSON.stringify([...next]))
+      return next
+    })
+  }
+
+  const unhideGrade = (assignmentId: number) => {
+    setHiddenGrades(prev => {
+      const next = new Set(prev)
+      next.delete(assignmentId)
+      localStorage.setItem('hiddenGrades', JSON.stringify([...next]))
+      return next
+    })
+  }
+
+  const [showHiddenGrades, setShowHiddenGrades] = React.useState(false)
+
+  // Get graded assignments (excluding hidden ones)
   const gradedAssignments = React.useMemo(() => {
     if (!assignments) return []
-    return assignments.filter((a: any) => a.grade)
-  }, [assignments])
+    return assignments.filter((a: any) => a.grade && !hiddenGrades.has(a.id))
+  }, [assignments, hiddenGrades])
+
+  // Get hidden graded assignments
+  const hiddenGradesList = React.useMemo(() => {
+    if (!assignments) return []
+    return assignments.filter((a: any) => a.grade && hiddenGrades.has(a.id))
+  }, [assignments, hiddenGrades])
 
   // Find current course from schedule
   const currentCourse = React.useMemo(() => {
@@ -797,7 +829,7 @@ function Dashboard() {
       )}
 
       {/* Grades Widget */}
-      {gradedAssignments.length > 0 && (
+      {(gradedAssignments.length > 0 || hiddenGradesList.length > 0) && (
         <div className="mb-6">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
@@ -811,15 +843,60 @@ function Dashboard() {
                 {gradedAssignments.length}
               </span>
             </div>
-            <button
-              onClick={toggleGrades}
-              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all duration-200"
-            >
-              <svg className={`w-5 h-5 transform transition-transform duration-200 ${showGrades ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
+            <div className="flex items-center gap-1">
+              {hiddenGradesList.length > 0 && (
+                <button
+                  onClick={() => setShowHiddenGrades(!showHiddenGrades)}
+                  className="px-2 py-1.5 text-xs bg-gray-100 hover:bg-gray-200 rounded-lg transition-all duration-200 flex items-center gap-1 text-gray-600"
+                  title={language === 'he' ? 'ציונים מוסתרים' : 'Hidden grades'}
+                >
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                  </svg>
+                  {hiddenGradesList.length}
+                </button>
+              )}
+              <button
+                onClick={toggleGrades}
+                className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all duration-200"
+              >
+                <svg className={`w-5 h-5 transform transition-transform duration-200 ${showGrades ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+            </div>
           </div>
+
+          {showHiddenGrades && (
+            <div className="mb-3 p-3 bg-purple-50 rounded-lg border border-purple-100">
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-xs font-bold text-gray-700">
+                  {language === 'he' ? 'ציונים מוסתרים' : 'Hidden Grades'}
+                </h4>
+                <button
+                  onClick={() => setShowHiddenGrades(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="max-h-32 overflow-y-auto space-y-1">
+                {hiddenGradesList.map((assignment: any) => (
+                  <div key={assignment.id} className="flex items-center justify-between p-2 bg-white rounded border border-gray-100 shadow-sm">
+                    <span className="text-xs text-gray-700 truncate flex-1 me-2">{assignment.name}</span>
+                    <button
+                      onClick={() => unhideGrade(assignment.id)}
+                      className="px-2 py-0.5 text-[10px] bg-purple-50 text-purple-600 rounded border border-purple-100 hover:bg-purple-100 transition-colors duration-200 whitespace-nowrap"
+                    >
+                      {language === 'he' ? 'הצג' : 'Show'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {showGrades && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 animate-slide-down">
@@ -836,10 +913,21 @@ function Dashboard() {
                          {getCourseName(assignment.course_name)}
                        </p>
                     </div>
-                    <div className="bg-purple-50 px-2 py-1 rounded-lg border border-purple-100 text-center min-w-[3rem]">
-                       <span className="block text-sm font-bold text-purple-700 leading-none" title={assignment.grade}>
-                         {assignment.grade.split('/')[0].trim()} 
-                       </span>
+                    <div className="flex items-center gap-2">
+                      <div className="bg-purple-50 px-2 py-1 rounded-lg border border-purple-100 text-center min-w-[3rem]">
+                         <span className="block text-sm font-bold text-purple-700 leading-none" title={assignment.grade}>
+                           {assignment.grade.split('/')[0].trim()} 
+                         </span>
+                      </div>
+                      <button
+                        onClick={() => hideGrade(assignment.id)}
+                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all duration-200"
+                        title={language === 'he' ? 'הסתר ציון' : 'Hide grade'}
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
                     </div>
                   </div>
                   
@@ -1656,7 +1744,7 @@ function Exams() {
       <div className="mb-8">
         <h2 className="text-3xl font-bold text-gray-800 mb-2">{t.upcomingExams}</h2>
         <p className="text-gray-600">
-          {language === 'he' ? 'לוח מבחנים - סמסטר א\' תשפ"ו' : 'Exam Schedule - Semester A 2026'}
+          {language === 'he' ? 'לוח מבחנים - סמסטר ב\' תשפ"ו' : 'Exam Schedule - Semester B 2026'}
         </p>
       </div>
 
